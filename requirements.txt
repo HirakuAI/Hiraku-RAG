@@ -1,0 +1,8 @@
+llama-cpp-python
+llama-parse
+langchain
+python-magic
+pypdf
+pandas
+numpy
+faiss-cpu
