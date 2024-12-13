@@ -1,4 +1,4 @@
-# OiMA
+# OiMA - Oii my asshole (prototype name)
 ```
 
 
@@ -71,7 +71,7 @@ but it works and useful so what can i say.....
 
 - Python 3.8+
 - Ollama (installed)
-- Linux
+- Linux/MacOS X
 
 ## Installation
 
@@ -81,10 +81,10 @@ git clone <repository-url>
 cd <repository-name>
 ```
 
-2. Create a virtual environment:
+2. Run the script to create/start virtual environment:
 ```bash
-python -m venv venv
-source venv/bin/activate
+chmod +x start_env.sh
+./start_env.sh
 ```
 
 3. Install dependencies:
