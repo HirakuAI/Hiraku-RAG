@@ -84,7 +84,7 @@ cd <repository-name>
 2. Run the script to create/start virtual environment:
 ```bash
 chmod +x start_env.sh
-./start_env.sh
+source ./start_env.sh
 ```
 
 3. Install dependencies:
