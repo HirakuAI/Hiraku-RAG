@@ -1,41 +1,44 @@
 """
-document_processor.py
-         _______                   _____                    _____                    _____          
-        /::\    \                 /\    \                  /\    \                  /\    \         
-       /::::\    \               /::\    \                /::\____\                /::\    \        
-      /::::::\    \              \:::\    \              /::::|   |               /::::\    \       
-     /::::::::\    \              \:::\    \            /:::::|   |              /::::::\    \      
-    /:::/~~\:::\    \              \:::\    \          /::::::|   |             /:::/\:::\    \     
-   /:::/    \:::\    \              \:::\    \        /:::/|::|   |            /:::/__\:::\    \    
-  /:::/    / \:::\    \             /::::\    \      /:::/ |::|   |           /::::\   \:::\    \   
- /:::/____/   \:::\____\   ____    /::::::\    \    /:::/  |::|___|______    /::::::\   \:::\    \  
-|:::|    |     |:::|    | /\   \  /:::/\:::\    \  /:::/   |::::::::\    \  /:::/\:::\   \:::\    \ 
+Document Processor Module
+
+A module for processing various document types using LlamaIndex.
+
+         _______                   _____                    _____                    _____
+        /::\    \                 /\    \                  /\    \                  /\    \
+       /::::\    \               /::\    \                /::\____\                /::\    \
+      /::::::\    \              \:::\    \              /::::|   |               /::::\    \
+     /::::::::\    \              \:::\    \            /:::::|   |              /::::::\    \
+    /:::/~~\:::\    \              \:::\    \          /::::::|   |             /:::/\:::\    \
+   /:::/    \:::\    \              \:::\    \        /:::/|::|   |            /:::/__\:::\    \
+  /:::/    / \:::\    \             /::::\    \      /:::/ |::|   |           /::::\   \:::\    \
+ /:::/____/   \:::\____\   ____    /::::::\    \    /:::/  |::|___|______    /::::::\   \:::\    \
+|:::|    |     |:::|    | /\   \  /:::/\:::\    \  /:::/   |::::::::\    \  /:::/\:::\   \:::\    \
 |:::|____|     |:::|    |/::\   \/:::/  \:::\____\/:::/    |:::::::::\____\/:::/  \:::\   \:::\____\
  \:::\    \   /:::/    / \:::\  /:::/    \::/    /\::/    / ~~~~~/:::/    /\::/    \:::\  /:::/    /
-  \:::\    \ /:::/    /   \:::\/:::/    / \/____/  \/____/      /:::/    /  \/____/ \:::\/:::/    / 
-   \:::\    /:::/    /     \::::::/    /                       /:::/    /            \::::::/    /  
-    \:::\__/:::/    /       \::::/____/                       /:::/    /              \::::/    /   
-     \::::::::/    /         \:::\    \                      /:::/    /               /:::/    /    
-      \::::::/    /           \:::\    \                    /:::/    /               /:::/    /     
-       \::::/    /             \:::\    \                  /:::/    /               /:::/    /      
-        \::/____/               \:::\____\                /:::/    /               /:::/    /       
-         ~~                      \::/    /                \::/    /                \::/    /        
-                                  \/____/                  \/____/                  \/____/         
-                                                                                                    
-Description: document processor part
-Auther: Yiyuan Li
-Date: 13 Dec
+  \:::\    \ /:::/    /   \:::\/:::/    / \/____/  \/____/      /:::/    /  \/____/ \:::\/:::/    /
+   \:::\    /:::/    /     \::::::/    /                       /:::/    /            \::::::/    /
+    \:::\__/:::/    /       \::::/____/                       /:::/    /              \::::/    /
+     \::::::::/    /         \:::\    \                      /:::/    /               /:::/    /
+      \::::::/    /           \:::\    \                    /:::/    /               /:::/    /
+       \::::/    /             \:::\    \                  /:::/    /               /:::/    /
+        \::/____/               \:::\____\                /:::/    /               /:::/    /
+         ~~                      \::/    /                \::/    /                \::/    /
+                                  \/____/                  \/____/                  \/____/
+
+Author: Yiyuan Li
+Date: December 13, 2024
+Description: Document processor implementation
 """
 import os
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-import magic
 import json
 from datetime import datetime
 from llama_index.core import SimpleDirectoryReader, Document
 from llama_index.core.readers.base import BaseReader
 from llama_index.core.node_parser import SimpleNodeParser
+import mimetypes
 
 class CustomJSONReader(BaseReader):
     """Custom reader for JSON files with structured output."""
@@ -89,6 +92,9 @@ class DocumentProcessor:
             ".json": CustomJSONReader()
         }
 
+        # Initialize mimetypes
+        mimetypes.init()
+
     def _extract_metadata(self, file_path: str) -> Dict[str, Any]:
         """
         Extract comprehensive metadata from file.
@@ -102,11 +108,9 @@ class DocumentProcessor:
         path = Path(file_path)
         stats = path.stat()
 
-        try:
-            mime_type = magic.from_file(file_path, mime=True)
-        except Exception as e:
-            self.logger.warning(f"Could not detect MIME type for {file_path}: {e}")
-            mime_type = "unknown"
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
 
         return {
             "file_path": str(path.absolute()),
@@ -219,15 +223,7 @@ class DocumentProcessor:
             raise
 
     def process_file(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """
-        Process a single file and return its content and metadata.
-
-        Args:
-            file_path: Path to the file to process
-
-        Returns:
-            Dictionary containing processed content and metadata
-        """
+        """Process a single file and return its content and metadata."""
         try:
             path = Path(file_path)
             if not path.exists():
@@ -275,20 +271,10 @@ class DocumentProcessor:
             }
 
     def get_supported_formats(self) -> List[str]:
-        """
-        Get list of supported file formats.
-
-        Returns:
-            List of supported file extensions
-        """
-        # Default formats supported by SimpleDirectoryReader
-        default_formats = [
-            '.txt', '.pdf', '.csv', '.md', '.markdown', 
+        """Get list of supported file formats."""
+        return sorted([
+            '.txt', '.pdf', '.csv', '.md', '.markdown',
             '.docx', '.doc', '.pptx', '.ppt',
-            '.jpg', '.jpeg', '.png', '.epub'
-        ]
-
-        # Add custom formats
-        custom_formats = list(self.file_extractors.keys())
-
-        return sorted(default_formats + custom_formats)
+            '.jpg', '.jpeg', '.png', '.epub',
+            '.json'
+        ])
