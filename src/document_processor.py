@@ -29,6 +29,7 @@ Author: Yiyuan Li
 Date: December 13, 2024
 Description: Document processor implementation
 """
+
 import os
 import logging
 from typing import List, Dict, Any, Optional
@@ -55,8 +56,8 @@ class CustomJSONReader(BaseReader):
 
 class DocumentProcessor:
     """
-    Enhanced document processor using LlamaIndex's SimpleDirectoryReader with extended capabilities.
-    Handles multiple file formats and provides detailed metadata extraction.
+    Document processor focusing on text-based formats using LlamaIndex's SimpleDirectoryReader.
+    Handles common document types like PDFs, text files, and structured data.
     """
 
     def __init__(
@@ -65,19 +66,13 @@ class DocumentProcessor:
         exclude_hidden: bool = True,
         required_exts: Optional[List[str]] = None
     ):
-        """
-        Initialize the document processor.
-
-        Args:
-            num_workers: Number of workers for parallel processing
-            exclude_hidden: Whether to exclude hidden files
-            required_exts: List of file extensions to process (e.g., ['.pdf', '.txt'])
-        """
+        # Initialize basic configuration
         self.num_workers = num_workers
         self.exclude_hidden = exclude_hidden
-        self.required_exts = required_exts
+        # Default to common text-based formats if none specified
+        self.required_exts = required_exts or ['.txt', '.pdf', '.md', '.json', '.csv']
 
-        # Setup logging
+        # Setup logging for tracking processing status
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
@@ -87,27 +82,27 @@ class DocumentProcessor:
             chunk_overlap=200
         )
 
-        # Custom file extractors for formats needing special handling
+        # Setup custom handlers for specific file types
         self.file_extractors = {
             ".json": CustomJSONReader()
         }
 
-        # Initialize mimetypes
+        # Initialize MIME type detection
         mimetypes.init()
 
     def _extract_metadata(self, file_path: str) -> Dict[str, Any]:
         """
-        Extract comprehensive metadata from file.
+        Extract basic metadata from file, focusing on essential information.
 
         Args:
             file_path: Path to the file
-
         Returns:
             Dictionary containing file metadata
         """
         path = Path(file_path)
         stats = path.stat()
 
+        # Get basic MIME type information
         mime_type, _ = mimetypes.guess_type(file_path)
         if mime_type is None:
             mime_type = "application/octet-stream"
@@ -129,17 +124,16 @@ class DocumentProcessor:
 
         Args:
             file_path: Path to the file
-
         Returns:
             Boolean indicating whether to process the file
         """
         path = Path(file_path)
 
-        # Check for hidden files
+        # Skip hidden files if configured
         if self.exclude_hidden and path.name.startswith('.'):
             return False
 
-        # Check file extension if required
+        # Check if file extension is in allowed list
         if self.required_exts:
             return path.suffix.lower() in self.required_exts
 
@@ -167,6 +161,7 @@ class DocumentProcessor:
             if not directory.exists():
                 raise FileNotFoundError(f"Directory not found: {directory_path}")
 
+            # Initialize the directory reader with our configuration
             reader = SimpleDirectoryReader(
                 input_dir=str(directory),
                 recursive=recursive,
@@ -221,60 +216,3 @@ class DocumentProcessor:
         except Exception as e:
             self.logger.error(f"Error processing directory {directory_path}: {str(e)}")
             raise
-
-    def process_file(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """Process a single file and return its content and metadata."""
-        try:
-            path = Path(file_path)
-            if not path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
-
-            if not self._should_process_file(file_path):
-                self.logger.info(f"Skipping file {file_path} based on configuration")
-                return None
-
-            reader = SimpleDirectoryReader(
-                input_files=[str(path)],
-                file_extractor=self.file_extractors,
-                file_metadata=self._extract_metadata,
-                filename_as_id=True
-            )
-
-            documents = reader.load_data()
-            if not documents:
-                return None
-
-            doc = documents[0]  # Single file processing
-            nodes = self.node_parser.get_nodes_from_documents([doc])
-
-            return {
-                'content': doc.text,
-                'chunks': [node.text for node in nodes],
-                'metadata': {
-                    **doc.extra_info,
-                    'doc_id': doc.doc_id,
-                    'num_chunks': len(nodes),
-                    'processing_status': 'success'
-                }
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error processing file {file_path}: {str(e)}")
-            return {
-                'content': '',
-                'chunks': [],
-                'metadata': {
-                    'file_path': file_path,
-                    'processing_status': 'error',
-                    'error_message': str(e)
-                }
-            }
-
-    def get_supported_formats(self) -> List[str]:
-        """Get list of supported file formats."""
-        return sorted([
-            '.txt', '.pdf', '.csv', '.md', '.markdown',
-            '.docx', '.doc', '.pptx', '.ppt',
-            '.jpg', '.jpeg', '.png', '.epub',
-            '.json'
-        ])

@@ -1,2 +1,7 @@
 llama-index>=0.9.40
 python-magic>=0.4.27
+torch
+transformers>=4.38.0
+python-pptx>=0.6.21
+Pillow>=10.2.0
+chromadb>=0.4.22
