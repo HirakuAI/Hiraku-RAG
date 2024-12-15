@@ -123,8 +123,14 @@ function ChatInterface() {
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
               {message.sources && message.sources.length > 0 && (
-                <div className="mt-2 text-xs text-gray-400">
-                  Source: {message.sources.join(", ")}
+                <div className="mt-2 text-xs space-y-1">
+                  <div className="text-gray-400 font-semibold">Sources:</div>
+                  {message.sources.map((source, i) => (
+                    <div key={i} className="text-gray-400">
+                      • {source.source} (Similarity:{" "}
+                      {(source.similarity * 100).toFixed(1)}%)
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
