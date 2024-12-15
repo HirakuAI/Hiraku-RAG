@@ -26,7 +26,7 @@ function ChatInterface() {
     setMessages((prev) => [...prev, { type: "user", content: question }]);
 
     try {
-      const response = await fetch("http://localhost:5000/api/query", {
+      const response = await fetch("http://localhost:1512/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
@@ -66,7 +66,7 @@ function ChatInterface() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:5000/api/upload", {
+      const response = await fetch("http://localhost:1512/api/upload", {
         method: "POST",
         body: formData,
       });
