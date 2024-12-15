@@ -1,11 +1,13 @@
 # Hiraku (prototype name)
 
+```
 ██╗  ██╗██╗██████╗  █████╗ ██╗  ██╗██╗   ██╗    
 ██║  ██║██║██╔══██╗██╔══██╗██║ ██╔╝██║   ██║    
 ███████║██║██████╔╝███████║█████╔╝ ██║   ██║    
 ██╔══██║██║██╔══██╗██╔══██║██╔═██╗ ██║   ██║    
 ██║  ██║██║██║  ██║██║  ██║██║  ██╗╚██████╔╝    
 ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝     
+```
 
 i hate to write readme and im an asshole so i just throw my code and requirement to gpt and it give me this shit below
 
