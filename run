@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Set working directories
+BACKEND_DIR="src"
+FRONTEND_DIR="frontend"
+
+# Check if directories exist
+if [ ! -d "$BACKEND_DIR" ]; then
+    echo "Backend directory not found!"
+    exit 1
+fi
+
+if [ ! -d "$FRONTEND_DIR" ]; then
+    echo "Frontend directory not found!"
+    exit 1
+fi
+
+# Setup cleanup trap
+cleanup() {
+    echo "Stopping services..."
+    pkill -f "python.*app.py"
+    pkill -f "node.*start"
+    exit 0
+}
+trap cleanup EXIT
+
+# Run frontend and backend concurrently
+echo "Starting services..."
+(cd "$FRONTEND_DIR" && npm run start) & 
+(python $BACKEND_DIR/app.py) &
+
+# Wait for all background processes
+wait

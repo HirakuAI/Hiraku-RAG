@@ -1,0 +1,59 @@
+{
+  "name": "hiraku-frontend",
+  "version": "0.1.0",
+  "description": "Hiraku: Fuckable AI-powered research assistant Frontend",
+  "author": {
+    "name": "Min Thu Khaing",
+    "email": "MinThuKhaing@uon.edu.au",
+    "url": "https://bontal.net"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuann3/FYP-Prototype.git"
+  },
+  "homepage": "https://hiraku.bontal.net",
+  "bugs": {
+    "url": "https://github.com/yuann3/FYP-Prototype/issues"
+  },
+  "keywords": [
+    "ai",
+    "research",
+    "assistant",
+    "react",
+    "typescript"
+  ],
+  "private": true,
+  "dependencies": {
+    "@tailwindcss/forms": "^0.5.9",
+    "cra-template": "1.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-scripts": "5.0.1",
+    "tailwindcss": "^3.4.16"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
