@@ -1,4 +1,4 @@
-# Hiraku (prototype name)
+# Hiraku (ヒラク)
 
 ```
 ██╗  ██╗██╗██████╗  █████╗ ██╗  ██╗██╗   ██╗    
@@ -9,67 +9,171 @@
 ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝     
 ```
 
-i hate to write readme and im an asshole so i just throw my code and requirement to gpt and it give me this shit below
 
-but it works and useful so what can i say.....
+Hiraku is an advanced RAG (Retrieval-Augmented Generation) system that combines document processing, vector storage, and LLM capabilities to provide intelligent document analysis and question answering.
 
--- YY
 
-## Current Status
+## Project TODO List
 
-### Implemented Features
-- Document processing pipeline using LlamaIndex
-- Support for multiple file formats
-- Metadata extraction
-- Document chunking
+### Core Features (Priority)
+- [ ] Implement Multi-Model Support
+  - Add Ollama integration (default local server)
+  - Add OpenAI API integration
+  - Add Claude API integration
+  - Create model configuration UI
+  - Allow users to use custom API keys/servers
+  - Implement model fallback logic
+  - Add model switching interface
+
+- [ ] Add Internet Search Integration
+  - Add real-time web search capability
+  - Merge web results with file-based answers
+  - Add search provider configuration
+  - Implement search result caching
+  - Add source citations for web results
+
+- [ ] Implement Multi-User System
+  - Add user authentication
+  - Create isolated user workspaces
+  - Setup secure API key storage
+  - Add user preferences
+  - Implement workspace sharing
+
+- [ ] Enhance Document Processing
+  - Add support for tables
+  - Add support for images
+  - Implement better PDF parsing
+  - Add batch processing
+  - Improve metadata extraction
+  - Add document versioning
+
+### User Interface
+- [ ] Add File Management Features
+  - File upload progress
+  - File list/grid view
+  - Delete/update documents
+  - Folder organization
+  - Tag/label system
+  - Search functionality
+
+- [ ] Improve Chat Interface
+  - Add loading states
+  - Better error messages
+  - Source citations display
+  - Conversation history
+  - Context management
+  - Message threading
+
+- [ ] Add Settings Interface
+  - Model provider selection
+  - API key management
+  - User preferences
+  - Theme customization
+  - Language settings
+  - Export/import settings
+
+### Security & Privacy
+- [ ] Implement Security Features
+  - User authentication system
+  - API key encryption
+  - Rate limiting
+  - Input validation
+  - File scanning
+  - Access logging
+
+- [ ] Add Privacy Controls
+  - Data retention settings
+  - Workspace isolation
+  - Usage analytics opt-out
+  - Data export
+  - Account deletion
+
+### Testing & Documentation
+- [ ] Add Comprehensive Testing
+  - Unit tests for core functions
+  - Integration tests for API
+  - Frontend component tests
+  - Security testing
+  - Performance testing
+  - Load testing
+
+- [ ] Complete Documentation
+  - Setup guide
+  - API documentation
+  - User manual
+  - Developer guide
+  - Security guidelines
+  - Contribution guidelines
+
+### Performance Optimization
+- [ ] Optimize System Performance
+  - Implement caching
+  - Add request queuing
+  - Optimize database queries
+  - Improve search speed
+  - Reduce memory usage
+  - Add performance monitoring
+
+### Deployment
+- [ ] Setup Deployment Pipeline
+  - Docker containerization
+  - CI/CD setup
+  - Environment configuration
+  - Backup systems
+  - Monitoring setup
+  - Error tracking
+
+## Features
+
+### Core Capabilities
+- Advanced document processing pipeline using LlamaIndex
+- Multi-format support (PDF, TXT, CSV, DOCX, etc.)
+- Intelligent document chunking and metadata extraction
+- Vector-based similarity search
+- Integration with Llama 2 via Ollama
+- Real-time query processing
+- Source attribution for answers
+
+### Technical Features
+- ChromaDB vector storage
+- GPU-accelerated embeddings
+- Concurrent document processing
 - Custom JSON document handling
-- Basic error handling and logging
-- Test framework for document processing
-
-### TODO
-
-#### High Priority
-- [ ] Implement Llama 2 integration via Ollama
-- [ ] Create vector storage for document embeddings
-- [ ] Develop query processing pipeline
-- [ ] Add document retrieval mechanism
-- [ ] Create simple CLI interface
-
-#### Medium Priority
-- [ ] Enhance error handling for specific file types
-- [ ] Add document preprocessing filters
-- [ ] Implement caching mechanism
-- [ ] Add support for concurrent processing
-- [ ] Create basic monitoring and logging dashboard
-
-#### Low Priority
-- [ ] Optimize chunking parameters
-- [ ] Add support for more file formats
-- [ ] Implement document update mechanism
-- [ ] Add basic security features
-- [ ] Create user authentication system
+- Comprehensive error handling and logging
+- SQLite metadata storage
 
 ## Prerequisites
 
 - Python 3.8+
-- Ollama (installed)
+- Ollama (installed and running)
 - Linux/MacOS X
+- CUDA-compatible GPU (optional, for acceleration)
 
 ## Installation
 
-1. Clone the repository:
+1. Install Ollama:
 ```bash
-git clone <repository-url>
-cd <repository-name>
+curl https://ollama.ai/install.sh | sh
 ```
 
-2. Run the script to create/start virtual environment:
+2. Pull the Llama 3.2 model:
+```bash
+ollama pull llama3.2
+```
+
+3. Clone the repository:
+```bash
+git clone https://github.com/yuann3/FYP-Prototype.git
+cd FYP-Prototype
+```
+
+4. Create and activate virtual environment:
 ```bash
 chmod +x start_env.sh
 source ./start_env.sh
 ```
 
-3. Install dependencies:
+5. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -79,53 +183,68 @@ pip install -r requirements.txt
 ```
 .
 ├── src/
-│   ├── document_processor.py   # Main document processing logic
-│   └── ...                    # Future modules
-├── tests/
-│   ├── test_processor.py      # Test cases
-│   └── ...                    # Future tests
-├── data/
-│   └── test/                  # Test data directory
-└── requirements.txt           # Project dependencies
+│   ├── app.py              # Flask API server
+│   ├── rag_system.py       # Core RAG implementation
+│   ├── document_processor.py # Document processing logic
+│   └── ollama_client.py    # Ollama API client
+├── frontend/              # React frontend
+├── tests/                # Test cases
+├── data/                 # Sample data and tests
+└── private/             # Runtime data (ignored by git)
+    ├── uploads/         # Uploaded documents
+    ├── vectordb/       # ChromaDB storage
+    └── rag.db          # SQLite metadata
 ```
 
-## Usage
+## API Endpoints
 
-Currently, you can test the document processor:
+### Query Endpoint
+- **POST** `/api/query`
+- Accepts JSON with `question` field
+- Returns answer and sources
 
-```python
-from src.document_processor import DocumentProcessor
+### Upload Endpoint
+- **POST** `/api/upload`
+- Accepts multipart form data with `file` field
+- Supports multiple document formats
 
-processor = DocumentProcessor()
-results = processor.process_directory("path/to/your/documents")
+## Development
+
+### Frontend Development
+```bash
+cd frontend
+npm install
+npm start
 ```
 
-## Technical Notes
+### Backend Development
+```bash
+python src/app.py
+```
 
-### Document Processing
-- Uses LlamaIndex's `SimpleDirectoryReader` for base functionality
-- Implements custom JSON handling via CustomJSONReader
-- Chunks documents using SimpleNodeParser (1024 tokens with 200 token overlap)
+## Supported File Formats
 
-### Supported File Formats
 - Text files (.txt)
 - PDFs (.pdf)
 - CSVs (.csv)
-- Microsoft Office files (.docx, .doc, .pptx, .ppt)
+- Microsoft Office (.docx, .doc, .pptx)
 - Images (.jpg, .jpeg, .png)
-- Markdown (.md, .markdown)
+- Markdown (.md)
 - JSON (.json)
 - EPub (.epub)
 
 ## Performance Notes
 
-- Parallel processing supported via num_workers parameter
-- Default chunk size optimized for most use cases
-- Memory usage scales with document size and number
+- Parallel document processing with configurable workers
+- Optimized chunk size (1024 tokens, 200 token overlap)
+- GPU acceleration for embeddings when available
+- Persistent vector storage with ChromaDB
+- Efficient metadata management via SQLite
 
-## Roadmap
+## Security Considerations
 
-### Phase 1: Core RAG Implementation
-- Integrate Llama 2 model
-- Implement basic query processing
-- Add vector storage
+- Local-only Ollama API access
+- Secure file upload handling
+- Input sanitization
+- Private storage for sensitive data
+- No external API dependencies
