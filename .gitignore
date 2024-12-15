@@ -20,3 +20,7 @@ Thumbs.db
 .DS_Store
 venv/
 data/test/
+
+# Ignore all files in the private/ directory
+# those contains database and uploaded files
+private/
