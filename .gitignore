@@ -20,6 +20,12 @@ Thumbs.db
 .DS_Store
 venv/
 data/test/
+__pycache__/
+*.py[oc]
+build/
+dist/
+package-lock.json
+package.json
 
 # Ignore all files in the private/ directory
 # those contains database and uploaded files
