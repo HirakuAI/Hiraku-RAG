@@ -16,7 +16,7 @@ Hiraku is an advanced RAG (Retrieval-Augmented Generation) system that combines 
 ## Project TODO List
 
 ### Core Features (Priority)
-- [ ] Implement Multi-Model Support
+- [ ] Implement Multi-Model Support (WIP)
   - Add Ollama integration (default local server)
   - Add OpenAI API integration
   - Add Claude API integration
@@ -24,6 +24,7 @@ Hiraku is an advanced RAG (Retrieval-Augmented Generation) system that combines 
   - Allow users to use custom API keys/servers
   - Implement model fallback logic
   - Add model switching interface
+  - If the user's question is not in the files, inform the user and provide an answer based on the model's training data or online resources.
 
 - [ ] Add Internet Search Integration
   - Add real-time web search capability
