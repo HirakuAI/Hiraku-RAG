@@ -3,6 +3,7 @@ llama-index>=0.9.40
 torch
 transformers>=4.38.0
 sentence-transformers>=2.2.0
+ollama>=0.1.7
 
 # Document Processing
 python-magic>=0.4.27
