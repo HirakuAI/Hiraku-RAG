@@ -160,13 +160,14 @@ curl https://ollama.ai/install.sh | sh
 
 2. Pull the Llama 3.2 model:
 ```bash
-ollama pull llama3.2
+ollama pull llama3.2 # main model
+ollama pull nomic-embed-text # embedding model
 ```
 
 3. Clone the repository:
 ```bash
-git clone https://github.com/yuann3/FYP-Prototype.git
-cd FYP-Prototype
+git clone https://github.com/yuann3/Hiraku-RAG.git
+cd Hiraku-RAG
 ```
 
 4. Create and activate virtual environment:
@@ -178,6 +179,18 @@ source ./start_env.sh
 5. Install dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+5. Run the application
+make sure ollama is running
+```bash
+ollama serve
+```
+
+run the script
+```bash
+chmod +x run
+./run
 ```
 
 ## Project Structure
