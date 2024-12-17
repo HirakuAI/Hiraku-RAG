@@ -3,6 +3,52 @@
 # Set working directories
 BACKEND_DIR="src"
 FRONTEND_DIR="frontend"
+BACKEND_PORT=1512  # Flask backend port
+FRONTEND_PORT=3000 # React frontend port
+
+# Function to check if port is in use
+port_in_use() {
+    lsof -i :$1 >/dev/null 2>&1
+}
+
+# Function to kill process using a specific port
+kill_port_process() {
+    local port=$1
+    if port_in_use $port; then
+        echo "Killing process on port $port..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            lsof -ti :$port | xargs kill -9
+        else
+            # Linux
+            fuser -k $port/tcp
+        fi
+    fi
+}
+
+# Function to kill all related processes
+cleanup() {
+    echo "Stopping services..."
+    
+    # Kill processes on specific ports
+    kill_port_process $BACKEND_PORT
+    kill_port_process $FRONTEND_PORT
+    
+    # Kill any remaining Python and Node processes related to our app
+    pkill -f "python.*app.py"
+    pkill -f "node.*start"
+    
+    # Kill any zombie processes
+    for pid in $(ps -ef | grep -E "python.*app.py|node.*start" | grep -v grep | awk '{print $2}'); do
+        kill -9 $pid 2>/dev/null
+    done
+    
+    echo "All services stopped"
+    exit 0
+}
+
+# Register cleanup for different signals
+trap cleanup SIGINT SIGTERM EXIT
 
 # Check if directories exist
 if [ ! -d "$BACKEND_DIR" ]; then
@@ -15,19 +61,20 @@ if [ ! -d "$FRONTEND_DIR" ]; then
     exit 1
 fi
 
-# Setup cleanup trap
-cleanup() {
-    echo "Stopping services..."
-    pkill -f "python.*app.py"
-    pkill -f "node.*start"
-    exit 0
-}
-trap cleanup EXIT
+# Kill any existing processes on our ports
+kill_port_process $BACKEND_PORT
+kill_port_process $FRONTEND_PORT
 
-# Run frontend and backend concurrently
+# Start services
 echo "Starting services..."
-(cd "$FRONTEND_DIR" && npm run start) & 
-(python $BACKEND_DIR/app.py) &
 
-# Wait for all background processes
-wait
+# Start frontend
+(cd "$FRONTEND_DIR" && npm run start) & 
+FRONTEND_PID=$!
+
+# Start backend
+(python3 $BACKEND_DIR/app.py) &
+BACKEND_PID=$!
+
+# Wait for processes
+wait $FRONTEND_PID $BACKEND_PID
