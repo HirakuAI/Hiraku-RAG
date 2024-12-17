@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Upload } from "lucide-react";
+import ReactMarkdown from 'react-markdown';
+import CodeBlock from './CodeBlock';
 
 function ThinkingAnimation() {
   return (
@@ -34,7 +36,7 @@ function TypeWriter({ content, onComplete }) {
     }
   }, [currentIndex, content, onComplete]);
 
-  return <p className="whitespace-pre-wrap">{displayedContent}</p>;
+  return <ReactMarkdown className="markdown-content">{displayedContent}</ReactMarkdown>;
 }
 
 function ChatInterface() {
@@ -168,6 +170,21 @@ function ChatInterface() {
     }
   };
 
+  const components = {
+    code: ({node, inline, className, children, ...props}) => {
+      const match = /language-(\w+)/.exec(className || '');
+      return !inline && match ? (
+        <CodeBlock className={className} {...props}>
+          {children}
+        </CodeBlock>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-900">
       {/* Header */}
@@ -210,7 +227,12 @@ function ChatInterface() {
                     }}
                   />
                 ) : (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <ReactMarkdown 
+                    className="markdown-content"
+                    components={components}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
                 )}
                 
                 {message.sources && !message.isTyping && (
@@ -253,14 +275,16 @@ function ChatInterface() {
               accept=".pdf,.txt,.csv,.doc,.docx,.md,.json"
               multiple
             />
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={loading ? "Hiraku is thinking..." : "Ask any question..."}
-              className="flex-1 p-2 border rounded-lg bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-              disabled={loading}
-            />
+            <div className={`chat-input-wrapper ${loading ? 'thinking' : ''}`}>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={loading ? "Hiraku is thinking..." : "Ask any question..."}
+                className="flex-1 p-2 border rounded-lg bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                disabled={loading}
+              />
+            </div>
             <button
               type="submit"
               disabled={loading || !input.trim()}
