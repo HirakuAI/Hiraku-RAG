@@ -219,3 +219,32 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error resetting database: {e}")
             raise
+
+    def get_document_by_path(self, filepath: str) -> Optional[Dict]:
+        """
+        Get document metadata by filepath.
+        
+        Args:
+            filepath: Path to the document file
+        
+        Returns:
+            Dictionary containing document metadata or None if not found
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
+                c.execute("SELECT * FROM documents WHERE filepath = ?", (filepath,))
+                row = c.fetchone()
+                if row:
+                    return {
+                        "doc_id": row[0],
+                        "filepath": row[1],
+                        "filename": row[2],
+                        "file_type": row[3],
+                        "created_at": row[4],
+                        "last_updated": row[5],
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Error retrieving document by path: {e}")
+            raise

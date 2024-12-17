@@ -201,3 +201,68 @@ class DocumentProcessor:
         except Exception as e:
             self.logger.error(f"Error processing directory {directory_path}: {str(e)}")
             raise
+
+    def process_file(self, file_path: str) -> List[Dict[str, Any]]:
+        """
+        Process a single file.
+        
+        Args:
+            file_path: Path to the file to process
+            
+        Returns:
+            List of processed documents with their content and metadata
+        """
+        try:
+            if not self._should_process_file(file_path):
+                return []
+
+            # Use SimpleDirectoryReader to process single file
+            reader = SimpleDirectoryReader(
+                input_files=[file_path],
+                exclude_hidden=self.exclude_hidden,
+                file_extractor=self.file_extractors,
+                file_metadata=self._extract_metadata,
+                filename_as_id=True
+            )
+
+            # Load and process document
+            documents = reader.load_data()
+            
+            # Process each document
+            processed_documents = []
+            for doc in documents:
+                try:
+                    # Create nodes (chunks) from the document
+                    nodes = self.node_parser.get_nodes_from_documents([doc])
+
+                    # Create processed document with enhanced metadata
+                    processed_doc = {
+                        'content': doc.text,
+                        'chunks': [node.text for node in nodes],
+                        'metadata': {
+                            **doc.extra_info,
+                            'doc_id': doc.doc_id,
+                            'num_chunks': len(nodes),
+                            'processing_status': 'success'
+                        }
+                    }
+                    processed_documents.append(processed_doc)
+
+                except Exception as e:
+                    self.logger.error(f"Error processing document {doc.doc_id}: {str(e)}")
+                    processed_documents.append({
+                        'content': doc.text,
+                        'chunks': [],
+                        'metadata': {
+                            **doc.extra_info,
+                            'doc_id': doc.doc_id,
+                            'processing_status': 'error',
+                            'error_message': str(e)
+                        }
+                    })
+
+            return processed_documents
+
+        except Exception as e:
+            self.logger.error(f"Error processing file {file_path}: {str(e)}")
+            raise

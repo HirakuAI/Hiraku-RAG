@@ -15,8 +15,52 @@ from typing import List, Dict
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
+import ollama
+from chromadb import Documents, EmbeddingFunction, Embeddings
 
 logger = logging.getLogger(__name__)
+
+
+class OllamaEmbeddingFunction:
+    """Embedding function using Ollama's nomic-embed-text model."""
+    
+    def __init__(self, model_name: str = "nomic-embed-text"):
+        """Initialize with Ollama client."""
+        self.client = ollama.Client(host='http://localhost:11434')
+        self.model_name = model_name
+        
+        # Test if model exists and pull if needed
+        try:
+            self.client.show(self.model_name)
+        except ollama.ResponseError as e:
+            if e.status_code == 404:
+                logger.info(f"Model {model_name} not found. Pulling model...")
+                self.client.pull(model_name)
+                logger.info(f"Successfully pulled model {model_name}")
+            else:
+                raise
+        
+    def __call__(self, input: Documents) -> Embeddings:
+        """Generate embeddings for input texts.
+        
+        Args:
+            input: Single string or list of strings to embed
+            
+        Returns:
+            List of embeddings, one per input text
+        """
+        if isinstance(input, str):
+            input = [input]
+            
+        try:
+            embeddings = []
+            for text in input:
+                response = self.client.embeddings(model=self.model_name, prompt=text)
+                embeddings.append(response["embedding"])
+            return embeddings
+        except Exception as e:
+            logger.error(f"Error generating embeddings: {e}")
+            raise
 
 
 class VectorStoreManager:
@@ -25,6 +69,8 @@ class VectorStoreManager:
     def __init__(self, persist_directory: str = "private/vectordb"):
         """Initialize vector store with ChromaDB."""
         os.makedirs(persist_directory, exist_ok=True)
+        self.persist_directory = persist_directory
+        
         self.client = chromadb.Client(
             Settings(
                 persist_directory=persist_directory,
@@ -33,17 +79,12 @@ class VectorStoreManager:
             )
         )
 
-        # Initialize embedding function
-        self.embedding_function = (
-            embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="sentence-transformers/all-MiniLM-L6-v2",
-                device="cuda" if torch.cuda.is_available() else "cpu",
-            )
-        )
+        # Use Ollama embedding function instead of SentenceTransformer
+        self.embedding_function = OllamaEmbeddingFunction()
 
         # Create or get collection
         self.collection = self.client.get_or_create_collection(
-            name="document_store",
+            name="documents",
             embedding_function=self.embedding_function,
             metadata={"hnsw:space": "cosine"},
         )
@@ -98,3 +139,11 @@ class VectorStoreManager:
         except Exception as e:
             logger.error(f"Error resetting vector store: {e}")
             raise
+
+    def has_document(self, doc_id: str) -> bool:
+        """Check if a document exists in the vector store."""
+        try:
+            result = self.collection.get(ids=[doc_id])
+            return len(result['ids']) > 0
+        except Exception:
+            return False
