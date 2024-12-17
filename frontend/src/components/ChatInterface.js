@@ -1,6 +1,42 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Upload } from "lucide-react";
 
+function ThinkingAnimation() {
+  return (
+    <div className="flex items-center space-x-2 p-4 bg-gray-800 rounded-lg">
+      <div className="flex space-x-1">
+        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+      </div>
+    </div>
+  );
+}
+
+function TypeWriter({ content, onComplete }) {
+  const [displayedContent, setDisplayedContent] = useState("");
+  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  useEffect(() => {
+    if (currentIndex < content.length) {
+      const timer = setTimeout(() => {
+        const charsPerFrame = 3;
+        const nextIndex = Math.min(currentIndex + charsPerFrame, content.length);
+        const nextChunk = content.slice(currentIndex, nextIndex);
+        
+        setDisplayedContent(prev => prev + nextChunk);
+        setCurrentIndex(prev => prev + charsPerFrame);
+      }, 6); 
+      
+      return () => clearTimeout(timer);
+    } else if (onComplete) {
+      onComplete();
+    }
+  }, [currentIndex, content, onComplete]);
+
+  return <p className="whitespace-pre-wrap">{displayedContent}</p>;
+}
+
 function ChatInterface() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -22,8 +58,10 @@ function ChatInterface() {
     setInput("");
     setLoading(true);
 
-    // Add user message
-    setMessages((prev) => [...prev, { type: "user", content: question }]);
+    setMessages((prev) => [...prev, 
+      { type: "user", content: question },
+      { type: "thinking" } // Add thinking message
+    ]);
 
     try {
       const response = await fetch("http://localhost:1512/api/query", {
@@ -34,20 +72,23 @@ function ChatInterface() {
 
       const data = await response.json();
       if (response.ok) {
+        // Remove thinking message and add assistant response
         setMessages((prev) => [
-          ...prev,
+          ...prev.filter(msg => msg.type !== "thinking"),
           {
             type: "assistant",
             content: data.answer,
             sources: data.sources,
+            isTyping: true,
           },
         ]);
       } else {
         throw new Error(data.error || "Failed to get response");
       }
     } catch (error) {
+      // Remove thinking message and add error
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter(msg => msg.type !== "thinking"),
         {
           type: "error",
           content: error.message,
@@ -59,38 +100,71 @@ function ChatInterface() {
   };
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
+    setLoading(true);
+    let successCount = 0;
+    let errorCount = 0;
 
     try {
-      const response = await fetch("http://localhost:1512/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      // Process files in parallel using Promise.all
+      await Promise.all(files.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const data = await response.json();
-      if (response.ok) {
+        try {
+          const response = await fetch("http://localhost:1512/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await response.json();
+          if (response.ok) {
+            successCount++;
+            setMessages((prev) => [
+              ...prev,
+              {
+                type: "system",
+                content: `File uploaded: ${file.name}`,
+              },
+            ]);
+          } else {
+            errorCount++;
+            throw new Error(data.error || "Failed to upload file");
+          }
+        } catch (error) {
+          errorCount++;
+          setMessages((prev) => [
+            ...prev,
+            {
+              type: "error",
+              content: `Error uploading ${file.name}: ${error.message}`,
+            },
+          ]);
+        }
+      }));
+
+      // Add summary message
+      if (files.length > 1) {
         setMessages((prev) => [
           ...prev,
           {
-            type: "system",
-            content: `File uploaded: ${file.name}`,
+            type: successCount === files.length ? "system" : "error",
+            content: `Upload complete: ${successCount} successful, ${errorCount} failed`,
           },
         ]);
-      } else {
-        throw new Error(data.error || "Failed to upload file");
       }
     } catch (error) {
       setMessages((prev) => [
         ...prev,
         {
           type: "error",
-          content: error.message,
+          content: "Error uploading files: " + error.message,
         },
       ]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -110,30 +184,48 @@ function ChatInterface() {
               message.type === "user" ? "justify-end" : "justify-start"
             }`}
           >
-            <div
-              className={`max-w-3xl p-4 rounded-lg ${
-                message.type === "user"
-                  ? "bg-blue-600 text-white"
-                  : message.type === "assistant"
-                  ? "bg-gray-800 text-gray-100"
-                  : message.type === "error"
-                  ? "bg-red-900 text-red-100"
-                  : "bg-gray-700 text-gray-100"
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{message.content}</p>
-              {message.sources && message.sources.length > 0 && (
-                <div className="mt-2 text-xs space-y-1">
-                  <div className="text-gray-400 font-semibold">Sources:</div>
-                  {message.sources.map((source, i) => (
-                    <div key={i} className="text-gray-400">
-                      • {source.source} (Similarity:{" "}
-                      {(source.similarity * 100).toFixed(1)}%)
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {message.type === "thinking" ? (
+              <ThinkingAnimation />
+            ) : (
+              <div
+                className={`max-w-3xl p-4 rounded-lg ${
+                  message.type === "user"
+                    ? "bg-blue-600 text-white"
+                    : message.type === "assistant"
+                    ? "bg-gray-800 text-gray-100"
+                    : message.type === "error"
+                    ? "bg-red-900 text-red-100"
+                    : "bg-gray-700 text-gray-100"
+                }`}
+              >
+                {message.type === "assistant" && message.isTyping ? (
+                  <TypeWriter 
+                    content={message.content}
+                    onComplete={() => {
+                      setMessages(prev => 
+                        prev.map((msg, i) => 
+                          i === idx ? { ...msg, isTyping: false } : msg
+                        )
+                      );
+                    }}
+                  />
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
+                
+                {message.sources && !message.isTyping && (
+                  <div className="mt-2 text-xs space-y-1">
+                    <div className="text-gray-400 font-semibold">Sources:</div>
+                    {message.sources.map((source, i) => (
+                      <div key={i} className="text-gray-400">
+                        • {source.source} (Similarity:{" "}
+                        {(source.similarity * 100).toFixed(1)}%)
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -146,7 +238,10 @@ function ChatInterface() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-gray-400 hover:text-gray-200"
+              className={`p-2 text-gray-400 hover:text-gray-200 ${
+                loading ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              disabled={loading}
             >
               <Upload className="w-5 h-5" />
             </button>
@@ -155,13 +250,14 @@ function ChatInterface() {
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"
-              accept=".pdf,.txt,.csv,.doc,.docx"
+              accept=".pdf,.txt,.csv,.doc,.docx,.md,.json"
+              multiple
             />
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question..."
+              placeholder={loading ? "Hiraku is thinking..." : "Ask any question..."}
               className="flex-1 p-2 border rounded-lg bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
               disabled={loading}
             />
