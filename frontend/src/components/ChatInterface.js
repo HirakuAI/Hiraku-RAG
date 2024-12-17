@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Upload } from "lucide-react";
-import ReactMarkdown from 'react-markdown';
-import CodeBlock from './CodeBlock';
+import ReactMarkdown from "react-markdown";
+import CodeBlock from "./CodeBlock";
 
 function ThinkingAnimation() {
   return (
@@ -18,25 +18,32 @@ function ThinkingAnimation() {
 function TypeWriter({ content, onComplete }) {
   const [displayedContent, setDisplayedContent] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
-  
+
   useEffect(() => {
     if (currentIndex < content.length) {
       const timer = setTimeout(() => {
         const charsPerFrame = 3;
-        const nextIndex = Math.min(currentIndex + charsPerFrame, content.length);
+        const nextIndex = Math.min(
+          currentIndex + charsPerFrame,
+          content.length
+        );
         const nextChunk = content.slice(currentIndex, nextIndex);
-        
-        setDisplayedContent(prev => prev + nextChunk);
-        setCurrentIndex(prev => prev + charsPerFrame);
-      }, 6); 
-      
+
+        setDisplayedContent((prev) => prev + nextChunk);
+        setCurrentIndex((prev) => prev + charsPerFrame);
+      }, 6);
+
       return () => clearTimeout(timer);
     } else if (onComplete) {
       onComplete();
     }
   }, [currentIndex, content, onComplete]);
 
-  return <ReactMarkdown className="markdown-content">{displayedContent}</ReactMarkdown>;
+  return (
+    <ReactMarkdown className="markdown-content">
+      {displayedContent}
+    </ReactMarkdown>
+  );
 }
 
 function ChatInterface() {
@@ -60,9 +67,10 @@ function ChatInterface() {
     setInput("");
     setLoading(true);
 
-    setMessages((prev) => [...prev, 
+    setMessages((prev) => [
+      ...prev,
       { type: "user", content: question },
-      { type: "thinking" } // Add thinking message
+      { type: "thinking" }, // Add thinking message
     ]);
 
     try {
@@ -76,7 +84,7 @@ function ChatInterface() {
       if (response.ok) {
         // Remove thinking message and add assistant response
         setMessages((prev) => [
-          ...prev.filter(msg => msg.type !== "thinking"),
+          ...prev.filter((msg) => msg.type !== "thinking"),
           {
             type: "assistant",
             content: data.answer,
@@ -90,7 +98,7 @@ function ChatInterface() {
     } catch (error) {
       // Remove thinking message and add error
       setMessages((prev) => [
-        ...prev.filter(msg => msg.type !== "thinking"),
+        ...prev.filter((msg) => msg.type !== "thinking"),
         {
           type: "error",
           content: error.message,
@@ -111,41 +119,43 @@ function ChatInterface() {
 
     try {
       // Process files in parallel using Promise.all
-      await Promise.all(files.map(async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
+      await Promise.all(
+        files.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
 
-        try {
-          const response = await fetch("http://localhost:1512/api/upload", {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            const response = await fetch("http://localhost:1512/api/upload", {
+              method: "POST",
+              body: formData,
+            });
 
-          const data = await response.json();
-          if (response.ok) {
-            successCount++;
+            const data = await response.json();
+            if (response.ok) {
+              successCount++;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  type: "system",
+                  content: `File uploaded: ${file.name}`,
+                },
+              ]);
+            } else {
+              errorCount++;
+              throw new Error(data.error || "Failed to upload file");
+            }
+          } catch (error) {
+            errorCount++;
             setMessages((prev) => [
               ...prev,
               {
-                type: "system",
-                content: `File uploaded: ${file.name}`,
+                type: "error",
+                content: `Error uploading ${file.name}: ${error.message}`,
               },
             ]);
-          } else {
-            errorCount++;
-            throw new Error(data.error || "Failed to upload file");
           }
-        } catch (error) {
-          errorCount++;
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "error",
-              content: `Error uploading ${file.name}: ${error.message}`,
-            },
-          ]);
-        }
-      }));
+        })
+      );
 
       // Add summary message
       if (files.length > 1) {
@@ -171,8 +181,8 @@ function ChatInterface() {
   };
 
   const components = {
-    code: ({node, inline, className, children, ...props}) => {
-      const match = /language-(\w+)/.exec(className || '');
+    code: ({ node, inline, className, children, ...props }) => {
+      const match = /language-(\w+)/.exec(className || "");
       return !inline && match ? (
         <CodeBlock className={className} {...props}>
           {children}
@@ -182,7 +192,7 @@ function ChatInterface() {
           {children}
         </code>
       );
-    }
+    },
   };
 
   return (
@@ -216,25 +226,25 @@ function ChatInterface() {
                 }`}
               >
                 {message.type === "assistant" && message.isTyping ? (
-                  <TypeWriter 
+                  <TypeWriter
                     content={message.content}
                     onComplete={() => {
-                      setMessages(prev => 
-                        prev.map((msg, i) => 
+                      setMessages((prev) =>
+                        prev.map((msg, i) =>
                           i === idx ? { ...msg, isTyping: false } : msg
                         )
                       );
                     }}
                   />
                 ) : (
-                  <ReactMarkdown 
+                  <ReactMarkdown
                     className="markdown-content"
                     components={components}
                   >
                     {message.content}
                   </ReactMarkdown>
                 )}
-                
+
                 {message.sources && !message.isTyping && (
                   <div className="mt-2 text-xs space-y-1">
                     <div className="text-gray-400 font-semibold">Sources:</div>
@@ -275,12 +285,14 @@ function ChatInterface() {
               accept=".pdf,.txt,.csv,.doc,.docx,.md,.json"
               multiple
             />
-            <div className={`chat-input-wrapper ${loading ? 'thinking' : ''}`}>
+            <div className={`chat-input-wrapper ${loading ? "thinking" : ""}`}>
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={loading ? "Hiraku is thinking..." : "Ask any question..."}
+                placeholder={
+                  loading ? "Hiraku is thinking..." : "Ask any question..."
+                }
                 className="flex-1 p-2 border rounded-lg bg-gray-700 text-white border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
                 disabled={loading}
               />
