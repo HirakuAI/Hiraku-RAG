@@ -61,6 +61,7 @@ def query():
     try:
         data = request.json
         question = data.get("question", "")
+        history = data.get("history", [])
 
         if not question:
             return jsonify({"error": "No question provided"}), 400
@@ -74,7 +75,7 @@ def query():
                 {"answer": "Please upload some documents first.", "sources": []}
             )
 
-        response = rag.query(question)
+        response = rag.query(question, history=history)
 
         if not response or "answer" not in response:
             raise ValueError("Invalid response from RAG system")
@@ -119,6 +120,26 @@ def upload_file():
 
     except Exception as e:
         logging.error(f"Upload error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/set-precision", methods=["POST"])
+def set_precision():
+    """Handle precision mode changes"""
+    try:
+        data = request.json
+        mode = data.get("mode")
+        if not mode:
+            return jsonify({"error": "No mode provided"}), 400
+
+        global rag
+        if rag is None:
+            init_rag()
+
+        rag.set_precision_mode(mode)
+        return jsonify({"message": f"Precision mode set to {mode}"})
+
+    except Exception as e:
+        logging.error(f"Error setting precision mode: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Upload } from "lucide-react";
+import { Send, Upload, Settings } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import CodeBlock from "./CodeBlock";
 
@@ -52,6 +52,60 @@ function ChatInterface() {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [precisionMode, setPrecisionMode] = useState("interactive");
+  const [showModeSelector, setShowModeSelector] = useState(false);
+
+  const modeDescriptions = {
+    accurate: "Only uses information from provided documents. Best for factual queries about your documents.",
+    interactive: "Primarily uses document information while allowing helpful supplementary knowledge. Good balance for most uses.",
+    flexible: "Combines document knowledge with broader understanding. Best for exploratory discussions and complex topics.",
+  };
+
+  const handleModeChange = async (mode) => {
+    try {
+      const response = await fetch("http://localhost:1512/api/set-precision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+
+      if (response.ok) {
+        setPrecisionMode(mode);
+        setShowModeSelector(false);
+        setMessages(prev => [...prev, {
+          type: "system",
+          content: `Mode changed to ${mode}. ${modeDescriptions[mode]}`
+        }]);
+      } else {
+        throw new Error("Failed to change mode");
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        type: "error",
+        content: `Error changing mode: ${error.message}`
+      }]);
+    }
+  };
+
+  const ModeSelector = () => (
+    <div className="absolute bottom-20 right-4 bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 w-80">
+      <h3 className="text-lg font-semibold mb-3 text-gray-200">Response Mode</h3>
+      {Object.entries(modeDescriptions).map(([mode, description]) => (
+        <button
+          key={mode}
+          onClick={() => handleModeChange(mode)}
+          className={`w-full text-left mb-2 p-3 rounded-lg transition-colors ${
+            precisionMode === mode
+              ? "bg-blue-600 text-white"
+              : "bg-gray-700 text-gray-200 hover:bg-gray-600"
+          }`}
+        >
+          <div className="font-medium capitalize mb-1">{mode}</div>
+          <div className="text-sm opacity-80">{description}</div>
+        </button>
+      ))}
+    </div>
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -265,7 +319,7 @@ function ChatInterface() {
 
       {/* Input area */}
       <div className="bg-gray-800 border-t border-gray-700 p-4">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto relative">
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <button
               type="button"
@@ -298,6 +352,14 @@ function ChatInterface() {
               />
             </div>
             <button
+              type="button"
+              onClick={() => setShowModeSelector(!showModeSelector)}
+              className="p-2 text-gray-400 hover:text-gray-200"
+              title="Change response mode"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+            <button
               type="submit"
               disabled={loading || !input.trim()}
               className="p-2 text-blue-400 hover:text-blue-300 disabled:text-gray-600"
@@ -305,6 +367,12 @@ function ChatInterface() {
               <Send className="w-5 h-5" />
             </button>
           </form>
+          {showModeSelector && <ModeSelector />}
+          {precisionMode === "flexible" && (
+            <div className="text-yellow-500 text-xs mt-2 text-center">
+              ⚠️ Hiraku can make mistakes in flexible mode. Please double-check responses.
+            </div>
+          )}
         </div>
       </div>
     </div>

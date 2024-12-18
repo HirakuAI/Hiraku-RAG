@@ -66,6 +66,16 @@ class HirakuRAG:
             else:
                 raise
 
+        self.precision_mode = "interactive"  # Changed default to interactive mode
+
+    def set_precision_mode(self, mode: str):
+        """Set the precision mode for responses."""
+        valid_modes = {"accurate", "interactive", "flexible"}
+        if mode not in valid_modes:
+            raise ValueError(f"Invalid mode. Must be one of: {valid_modes}")
+        self.precision_mode = mode
+        logger.info(f"Precision mode set to: {mode}")
+
     def add_documents(self, file_paths: List[str]):
         """Process and add documents to the system."""
         docs_dir = Path("private/uploads")
@@ -169,27 +179,92 @@ class HirakuRAG:
             f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks"
         )
 
-    def query(self, question: str, k: int = 3) -> Dict[str, Any]:
-        """Query the system with a question."""
-        try:
-            # Perform similarity search
-            results = self.vector_store.similarity_search(question, k)
+    def query(self, question: str, history: List[Dict[str, str]] = None, k: int = 3) -> Dict[str, Any]:
+        """Query the system with a question and optional conversation history."""
 
-            # Prepare context from retrieved documents
+        try:
+            normalized_question = question.lower().strip().rstrip('?!.,')
+
+            casual_greetings = {
+                "hi", "hello", "hey", "how are you", "how's it going", 
+                "what's up", "good morning", "good afternoon", "good evening",
+                "hi there", "hello there", "how are you doing", "how do you do",
+                "how are things", "how's everything"
+            }
+
+            is_greeting = any(greeting in normalized_question for greeting in casual_greetings)
+
+            if is_greeting:
+
+                greeting_responses = {
+                    "accurate": "Hi, Im Hiraku, I can answer question base on the file you provided. But Im in Accurate mode now so I should only respond based on documents, but I don't see any greeting-related content. Would you like to ask something about the documents?",
+                    "interactive": "Hello! [AI Knowledge: I'm here to help you! While I don't see any greetings in the documents, I can still chat with you.] What would you like to know about?",
+                    "flexible": """Hi there! [AI Knowledge: I'm doing well, thank you for asking! I'm ready to help you today.] 
+
+                        I can assist you with:
+                        - Answering questions about your documents
+                        - Providing explanations and insights
+                        - Combining document knowledge with helpful context
+
+                        What would you like to explore?"""
+                }
+                return {
+                    "answer": greeting_responses[self.precision_mode],
+                    "sources": []
+                }
+
+            # For non-greeting queries, perform similarity search
+            results = self.vector_store.similarity_search(question, k)
             context = "\n".join(results["documents"][0])
 
-            # Generate prompt with better system message
+            # Format conversation history
+            conversation_context = ""
+            if history and len(history) > 0:
+                conversation_context = "\nPrevious conversation:\n" + "\n".join(
+                    f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                    for msg in history
+                )
+
+            system_messages = {
+                "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
+                    1. ONLY use information from the given context
+                    2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
+                    3. Do not make assumptions or add external knowledge
+                    4. Cite specific sources when referencing information
+                    5. Maintain strict accuracy over completeness
+                    6. For follow-up questions, consider the previous conversation context""",
+
+                "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
+                    1. Primarily use information from the provided context
+                    2. When adding knowledge beyond the context:
+                       - Clearly mark such information with [AI Knowledge: your text]
+                    3. Always distinguish between document information and supplementary knowledge
+                    4. Consider the previous conversation context for follow-up questions
+                    5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
+                    6. Maintain transparency about information sources""",
+
+                "flexible": """You are Hiraku, a knowledgeable AI assistant that combines document knowledge with general understanding. Follow these guidelines:
+                    1. First check if the question can be answered using the provided context
+                    2. Consider the previous conversation context for follow-up questions
+                    3. Maintain consistency with previous responses
+                    4. If the question refers to earlier topics, use that context to provide relevant answers
+                    5. For follow-up questions like "tell me more" or "explain further", expand on the previous topic
+                    6. Always maintain:
+                       - Clear distinction between document content and AI knowledge
+                       - Helpful and informative tone
+                       - Well-structured responses
+                       - Consistency throughout the conversation
+                       - Try your best to help user"""
+            }
+
             messages = [
                 {
                     "role": "system",
-                    "content": """You are a helpful AI assistant powered by Llama 3.2. 
-                    Answer questions based only on the provided context. If you cannot find 
-                    the exact information in the context, say 'I don't have enough information 
-                    to answer that question accurately.' Always cite your sources when possible."""
+                    "content": system_messages[self.precision_mode]
                 },
                 {
                     "role": "user",
-                    "content": f"Context: {context}\n\nQuestion: {question}\n\nProvide a detailed answer using only the information from the context above."
+                    "content": f"Context: {context}\n{conversation_context}\n\nCurrent question: {question}"
                 }
             ]
 
