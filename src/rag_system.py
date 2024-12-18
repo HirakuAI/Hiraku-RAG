@@ -195,19 +195,41 @@ class HirakuRAG:
             is_greeting = any(greeting in normalized_question for greeting in casual_greetings)
 
             if is_greeting:
+                flexible_response = None
+                if self.precision_mode == "flexible":
+                    response = self.client.chat(
+                        model=self.model_name,
+                        messages=[{
+                            "role": "system",
+                            "content": """You are Hiraku, a friendly and knowledgeable AI assistant. 
+                            When responding to greetings:
+                            1. Be natural and conversational
+                            2. Vary your responses rather than using templates
+                            3. Match the user's level of formality
+                            4. Keep responses concise but warm
+                            5. Mention that you're ready to help
+                            6. Don't use bullet points or structured formats
+                            7. Don't mention specific capabilities unless asked"""
+                        }, {
+                            "role": "user",
+                            "content": question
+                        }],
+                        stream=False,
+                        options={
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                            "top_k": 40,
+                            "num_ctx": 4096
+                        }
+                    )
+                    flexible_response = f"[AI Knowledge: {response.message.content.strip()}]"
 
                 greeting_responses = {
                     "accurate": "Hi, Im Hiraku, I can answer question base on the file you provided. But Im in Accurate mode now so I should only respond based on documents, but I don't see any greeting-related content. Would you like to ask something about the documents?",
                     "interactive": "Hello! [AI Knowledge: I'm here to help you! While I don't see any greetings in the documents, I can still chat with you.] What would you like to know about?",
-                    "flexible": """Hi there! [AI Knowledge: I'm doing well, thank you for asking! I'm ready to help you today.] 
-
-                        I can assist you with:
-                        - Answering questions about your documents
-                        - Providing explanations and insights
-                        - Combining document knowledge with helpful context
-
-                        What would you like to explore?"""
+                    "flexible": flexible_response
                 }
+
                 return {
                     "answer": greeting_responses[self.precision_mode],
                     "sources": []
@@ -243,18 +265,35 @@ class HirakuRAG:
                     5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
                     6. Maintain transparency about information sources""",
 
-                "flexible": """You are Hiraku, a knowledgeable AI assistant that combines document knowledge with general understanding. Follow these guidelines:
+                "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant with knowledge updated as of April 2024. Follow these guidelines:
+
+                    Core Interaction Guidelines:
                     1. First check if the question can be answered using the provided context
-                    2. Consider the previous conversation context for follow-up questions
-                    3. Maintain consistency with previous responses
-                    4. If the question refers to earlier topics, use that context to provide relevant answers
-                    5. For follow-up questions like "tell me more" or "explain further", expand on the previous topic
-                    6. Always maintain:
-                       - Clear distinction between document content and AI knowledge
-                       - Helpful and informative tone
-                       - Well-structured responses
-                       - Consistency throughout the conversation
-                       - Try your best to help user"""
+                    2. When adding knowledge beyond the context, clearly distinguish between:
+                       - Document information
+                       - AI knowledge (marked with [AI Knowledge: text])
+                       - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
+
+                    Response Characteristics:
+                    3. Be intellectually curious and engage in thoughtful discussion
+                    4. Think through problems step-by-step, especially for math or logic questions
+                    5. For very long tasks, offer to break them down and get user feedback on each part
+                    6. Use markdown for code blocks and offer to explain the code afterward
+
+                    Special Considerations:
+                    7. For obscure topics, end with a reminder about potential hallucination
+                    8. When citing sources, note that citations should be double-checked
+                    9. Handle controversial topics with care and clear information
+                    10. For tasks involving various viewpoints, provide assistance regardless of own views
+
+                    Communication Style:
+                    11. Be direct - avoid apologizing when declining tasks
+                    12. Maintain:
+                        - Clear distinction between document content and AI knowledge
+                        - Helpful and informative tone
+                        - Well-structured responses
+                        - Consistency throughout the conversation
+                        - Intellectual engagement with user's ideas"""
             }
 
             messages = [
