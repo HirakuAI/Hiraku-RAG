@@ -2,19 +2,22 @@
 app.py          flask app for RAG system
 
 Author:         Min Thu Khaing
-Date:           December 15, 2024
-Description:    Flask API for RAG system.
+Date:           December 21, 2024
+Description:    Flask API for RAG system with user authentication.
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from rag_system import HirakuRAG
+from user_management import UserManager
 import os
 import logging
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)
-rag = None
+user_manager = None
+rag_instances = {}  # Store RAG instances per user
 _initialized = False
 
 # logging
@@ -22,74 +25,83 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-def init_rag():
-    """Initialize the RAG system and load documents"""
-    global rag, _initialized
+
+def init_system():
+    """Initialize the system"""
+    global user_manager, _initialized
 
     if _initialized:
         return
 
     try:
-        os.makedirs("private/uploads", exist_ok=True)
-        os.makedirs("private/vectordb", exist_ok=True)
-
-        if rag is None:
-            rag = HirakuRAG()
-
-            if not rag.vector_store_has_documents:
-                docs_dir = "private/uploads"
-                if os.path.exists(docs_dir):
-                    files = set()  # Use set to prevent duplicates
-                    for root, _, filenames in os.walk(docs_dir):
-                        for filename in filenames:
-                            ext = os.path.splitext(filename)[1].lower()
-                            if ext in {".pdf", ".txt", ".csv", ".doc", ".docx"}:
-                                files.add(os.path.join(root, filename))
-                    if files:
-                        rag.add_documents(list(files))
-                        logging.info(f"Loaded {len(files)} existing documents")
-
+        os.makedirs("private", exist_ok=True)
+        if user_manager is None:
+            user_manager = UserManager()
         _initialized = True
 
     except Exception as e:
-        logging.error(f"Error initializing RAG system: {str(e)}")
+        logging.error(f"Error initializing system: {str(e)}")
         raise
 
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("Authorization")
+        if not token:
+            return jsonify({"error": "No authentication token provided"}), 401
+
+        token = token.split("Bearer ")[-1]
+        user_info = user_manager.verify_token(token)
+
+        if not user_info:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        return f(user_info, *args, **kwargs)
+
+    return decorated
+
+
+def get_user_rag(username: str) -> HirakuRAG:
+    """Get or create RAG instance for user"""
+    if username not in rag_instances:
+        rag_instances[username] = HirakuRAG(username=username)
+    return rag_instances[username]
+
+
 @app.route("/api/query", methods=["POST"])
-def query():
+@require_auth
+def query(user_info):
     """Handle query requests"""
     try:
         data = request.json
         question = data.get("question", "")
-        history = data.get("history", [])
+        history = user_manager.get_chat_history(user_info["user_id"])
 
         if not question:
             return jsonify({"error": "No question provided"}), 400
 
-        global rag
-        if rag is None:
-            init_rag()
-
-        if not rag.vector_store_has_documents:
-            return jsonify(
-                {"answer": "Please upload some documents first.", "sources": []}
-            )
+        # Get user-specific RAG instance
+        rag = get_user_rag(user_info["username"])
 
         response = rag.query(question, history=history)
 
-        if not response or "answer" not in response:
-            raise ValueError("Invalid response from RAG system")
-
-        return jsonify(
-            {"answer": response["answer"], "sources": response.get("sources", [])}
+        # Save chat history
+        user_manager.save_chat_message(user_info["user_id"], question, "user")
+        user_manager.save_chat_message(
+            user_info["user_id"], response["answer"], "assistant"
         )
+
+        return jsonify(response)
 
     except Exception as e:
         logging.error(f"Query error: {str(e)}")
-        return jsonify({"error": "Failed to process query. Please try again."}), 500
+        return jsonify({"error": "Failed to process query"}), 500
+
 
 @app.route("/api/upload", methods=["POST"])
-def upload_file():
+@require_auth
+def upload_file(user_info):
     """Handle file uploads"""
     try:
         if "file" not in request.files:
@@ -99,31 +111,32 @@ def upload_file():
         if file.filename == "":
             return jsonify({"error": "No file selected"}), 400
 
-        os.makedirs("private/uploads", exist_ok=True)
+        # Get user-specific RAG instance
+        rag = get_user_rag(user_info["username"])
 
-        filepath = os.path.join("private/uploads", file.filename)
-
-        if os.path.exists(filepath):
-            logging.info(f"File {file.filename} already exists, skipping upload")
-            return jsonify({"message": "File already processed"})
-
+        # File will be saved to user's upload directory by RAG
+        filepath = os.path.join(rag.uploads_dir, file.filename)
         file.save(filepath)
 
-        global rag
-        if rag is None:
-            init_rag()
-
+        # Process the document
         rag.add_documents([filepath])
-        logging.info(f"Successfully uploaded and processed: {file.filename}")
 
+        # Link document to user
+        user_manager.link_document_to_user(
+            user_info["user_id"], os.path.basename(filepath)
+        )
+
+        logging.info(f"Successfully uploaded and processed: {file.filename}")
         return jsonify({"message": "File uploaded successfully"})
 
     except Exception as e:
         logging.error(f"Upload error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/set-precision", methods=["POST"])
-def set_precision():
+@require_auth
+def set_precision(user_info):
     """Handle precision mode changes"""
     try:
         data = request.json
@@ -131,19 +144,60 @@ def set_precision():
         if not mode:
             return jsonify({"error": "No mode provided"}), 400
 
-        global rag
-        if rag is None:
-            init_rag()
-
+        # Get user-specific RAG instance
+        rag = get_user_rag(user_info["username"])
         rag.set_precision_mode(mode)
+
         return jsonify({"message": f"Precision mode set to {mode}"})
 
     except Exception as e:
         logging.error(f"Error setting precision mode: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    init_rag()
 
+@app.route("/api/register", methods=["POST"])
+def register():
+    try:
+        data = request.json
+        username = data.get("username")
+        password = data.get("password")
+        email = data.get("email")
+
+        if not all([username, password, email]):
+            return jsonify({"error": "Missing required fields"}), 400
+
+        if user_manager.register_user(username, password, email):
+            return jsonify({"message": "Registration successful"})
+        else:
+            return jsonify({"error": "Username or email already exists"}), 409
+
+    except Exception as e:
+        logging.error(f"Registration error: {str(e)}")
+        return jsonify({"error": "Registration failed"}), 500
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    try:
+        data = request.json
+        username = data.get("username")
+        password = data.get("password")
+
+        if not all([username, password]):
+            return jsonify({"error": "Missing credentials"}), 400
+
+        token = user_manager.authenticate_user(username, password)
+        if token:
+            return jsonify({"token": token})
+        else:
+            return jsonify({"error": "Invalid credentials"}), 401
+
+    except Exception as e:
+        logging.error(f"Login error: {str(e)}")
+        return jsonify({"error": "Login failed"}), 500
+
+
+if __name__ == "__main__":
+    init_system()
     debug_mode = os.environ.get("FLASK_ENV") == "development"
     app.run(debug=debug_mode, port=1512, use_reloader=False)
