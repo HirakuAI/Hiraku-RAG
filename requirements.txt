@@ -24,3 +24,4 @@ flask-cors>=4.0.0
 # Utilities
 python-dotenv>=1.0.0
 tqdm>=4.65.0
+pyjwt
