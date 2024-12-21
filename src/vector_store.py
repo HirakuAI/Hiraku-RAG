@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 class OllamaEmbeddingFunction:
     """Embedding function using Ollama's nomic-embed-text model."""
-    
+
     def __init__(self, model_name: str = "nomic-embed-text"):
         """Initialize with Ollama client."""
-        self.client = ollama.Client(host='http://localhost:11434')
+        self.client = ollama.Client(host="http://localhost:11434")
         self.model_name = model_name
-        
+
         # Test if model exists and pull if needed
         try:
             self.client.show(self.model_name)
@@ -39,19 +39,19 @@ class OllamaEmbeddingFunction:
                 logger.info(f"Successfully pulled model {model_name}")
             else:
                 raise
-        
+
     def __call__(self, input: Documents) -> Embeddings:
         """Generate embeddings for input texts.
-        
+
         Args:
             input: Single string or list of strings to embed
-            
+
         Returns:
             List of embeddings, one per input text
         """
         if isinstance(input, str):
             input = [input]
-            
+
         try:
             embeddings = []
             for text in input:
@@ -66,11 +66,17 @@ class OllamaEmbeddingFunction:
 class VectorStoreManager:
     """Manages vector storage and retrieval using ChromaDB."""
 
-    def __init__(self, persist_directory: str = "private/vectordb"):
+    def __init__(self, persist_directory: str, username: str):
         """Initialize vector store with ChromaDB."""
+        if not username:
+            raise ValueError(
+                "Username is required for VectorStoreManager initialization"
+            )
+
         os.makedirs(persist_directory, exist_ok=True)
         self.persist_directory = persist_directory
-        
+        self.username = username
+
         self.client = chromadb.Client(
             Settings(
                 persist_directory=persist_directory,
@@ -79,14 +85,13 @@ class VectorStoreManager:
             )
         )
 
-        # Use Ollama embedding function instead of SentenceTransformer
         self.embedding_function = OllamaEmbeddingFunction()
 
-        # Create or get collection
+        # Create or get user-specific collection
         self.collection = self.client.get_or_create_collection(
-            name="documents",
+            name=f"{username}_documents",
             embedding_function=self.embedding_function,
-            metadata={"hnsw:space": "cosine"},
+            metadata={"hnsw:space": "cosine", "username": username},
         )
 
     def add_texts(self, texts: List[str], metadatas: List[Dict], ids: List[str]):
@@ -144,6 +149,6 @@ class VectorStoreManager:
         """Check if a document exists in the vector store."""
         try:
             result = self.collection.get(ids=[doc_id])
-            return len(result['ids']) > 0
+            return len(result["ids"]) > 0
         except Exception:
             return False

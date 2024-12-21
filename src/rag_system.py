@@ -31,15 +31,24 @@ logger = logging.getLogger(__name__)
 class HirakuRAG:
     """Main RAG system implementation."""
 
-    def __init__(
-        self,
-        model_name: str = "llama3.2",
-        db_path: str = "private/rag.db",
-        vector_dir: str = "private/vectordb",
-    ):
+    def __init__(self, model_name: str = "llama3.2", username: str = None):
         """Initialize RAG system components."""
+        if not username:
+            raise ValueError("Username is required for initialization")
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
+
+        # Setup user-specific paths
+        self.user_dir = os.path.join("private", username)
+        self.db_path = os.path.join(self.user_dir, "rag.db")
+        self.vector_dir = os.path.join(self.user_dir, "vectordb")
+        self.uploads_dir = os.path.join(self.user_dir, "uploads")
+
+        # Create user directories
+        os.makedirs(self.user_dir, exist_ok=True)
+        os.makedirs(self.uploads_dir, exist_ok=True)
+        os.makedirs(self.vector_dir, exist_ok=True)
 
         # Initialize components
         self.doc_processor = DocumentProcessor(
@@ -47,12 +56,12 @@ class HirakuRAG:
             exclude_hidden=True,
             required_exts=[".txt", ".pdf", ".md", ".json", ".csv"],
         )
-        self.db_manager = DatabaseManager(db_path)
-        self.vector_store = VectorStoreManager(vector_dir)
+        self.db_manager = DatabaseManager(self.db_path)
+        self.vector_store = VectorStoreManager(self.vector_dir, username)
 
         # Initialize Ollama client
         self.model_name = model_name
-        self.client = ollama.Client(host='http://localhost:11434')
+        self.client = ollama.Client(host="http://localhost:11434")
 
         try:
             # Test if model exists
@@ -78,9 +87,6 @@ class HirakuRAG:
 
     def add_documents(self, file_paths: List[str]):
         """Process and add documents to the system."""
-        docs_dir = Path("private/uploads")
-        docs_dir.mkdir(exist_ok=True)
-
         total_chunks = 0
         successful_files = 0
         processed_paths = set()
@@ -93,16 +99,18 @@ class HirakuRAG:
                     continue
                 processed_paths.add(file_path)
 
-                target_path = docs_dir / Path(file_path).name
-
-                existing_doc = self.db_manager.get_document_by_path(str(target_path))
-                if existing_doc and self.vector_store.has_document(existing_doc["id"]):
-                    logger.info(f"Document {target_path} already exists in both database and vector store, skipping")
-                    continue
-
+                # Copy to user uploads directory if needed
+                target_path = Path(self.uploads_dir) / Path(file_path).name
                 if not target_path.exists():
                     import shutil
+
                     shutil.copy2(file_path, target_path)
+
+                # Check if already processed
+                existing_doc = self.db_manager.get_document_by_path(str(target_path))
+                if existing_doc and self.vector_store.has_document(existing_doc["id"]):
+                    logger.info(f"Document already processed: {target_path}")
+                    continue
 
                 # Process single file
                 processed_docs = self.doc_processor.process_file(str(target_path))
@@ -130,9 +138,13 @@ class HirakuRAG:
                             chunk_id = f"{doc_id}_chunk_{i}"
 
                             # Check if chunk already exists
-                            existing_chunk = self.db_manager.get_chunk_metadata(chunk_id)
+                            existing_chunk = self.db_manager.get_chunk_metadata(
+                                chunk_id
+                            )
                             if existing_chunk:
-                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
+                                logger.warning(
+                                    f"Chunk {chunk_id} already exists, skipping"
+                                )
                                 continue
 
                             # Try to add chunk to database first
@@ -141,13 +153,17 @@ class HirakuRAG:
                                 # Only add to vectors if database insertion succeeded
                                 chunk_ids.append(chunk_id)
                                 chunk_texts.append(chunk)
-                                chunk_metadatas.append({
-                                    "document_id": doc_id,
-                                    "chunk_index": i,
-                                    "source": doc["metadata"]["file_path"],
-                                })
+                                chunk_metadatas.append(
+                                    {
+                                        "document_id": doc_id,
+                                        "chunk_index": i,
+                                        "source": doc["metadata"]["file_path"],
+                                    }
+                                )
                             except sqlite3.IntegrityError:
-                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
+                                logger.warning(
+                                    f"Chunk {chunk_id} already exists, skipping"
+                                )
                                 continue
                             except Exception as e:
                                 logger.error(f"Error adding chunk {chunk_id}: {e}")
@@ -159,12 +175,16 @@ class HirakuRAG:
                                 self.vector_store.collection.add(
                                     documents=chunk_texts,
                                     ids=chunk_ids,
-                                    metadatas=chunk_metadatas
+                                    metadatas=chunk_metadatas,
                                 )
                                 total_chunks += len(chunk_texts)
-                                logger.info(f"Added {len(chunk_texts)} chunks from {target_path}")
+                                logger.info(
+                                    f"Added {len(chunk_texts)} chunks from {target_path}"
+                                )
                             except Exception as e:
-                                logger.error(f"Error adding chunks to vector store: {e}")
+                                logger.error(
+                                    f"Error adding chunks to vector store: {e}"
+                                )
 
                         successful_files += 1
                     else:
@@ -179,29 +199,45 @@ class HirakuRAG:
             f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks"
         )
 
-    def query(self, question: str, history: List[Dict[str, str]] = None, k: int = 3) -> Dict[str, Any]:
+    def query(
+        self, question: str, history: List[Dict[str, str]] = None, k: int = 3
+    ) -> Dict[str, Any]:
         """Query the system with a question and optional conversation history."""
 
         try:
-            normalized_question = question.lower().strip().rstrip('?!.,')
+            normalized_question = question.lower().strip().rstrip("?!.,")
 
             casual_greetings = {
-                "hi", "hello", "hey", "how are you", "how's it going", 
-                "what's up", "good morning", "good afternoon", "good evening",
-                "hi there", "hello there", "how are you doing", "how do you do",
-                "how are things", "how's everything"
+                "hi",
+                "hello",
+                "hey",
+                "how are you",
+                "how's it going",
+                "what's up",
+                "good morning",
+                "good afternoon",
+                "good evening",
+                "hi there",
+                "hello there",
+                "how are you doing",
+                "how do you do",
+                "how are things",
+                "how's everything",
             }
 
-            is_greeting = any(greeting in normalized_question for greeting in casual_greetings)
+            is_greeting = any(
+                greeting in normalized_question for greeting in casual_greetings
+            )
 
             if is_greeting:
                 flexible_response = None
                 if self.precision_mode == "flexible":
                     response = self.client.chat(
                         model=self.model_name,
-                        messages=[{
-                            "role": "system",
-                            "content": """You are Hiraku, a friendly and knowledgeable AI assistant. 
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": """You are Hiraku, a friendly and knowledgeable AI assistant. 
                             When responding to greetings:
                             1. Be natural and conversational
                             2. Vary your responses rather than using templates
@@ -209,30 +245,31 @@ class HirakuRAG:
                             4. Keep responses concise but warm
                             5. Mention that you're ready to help
                             6. Don't use bullet points or structured formats
-                            7. Don't mention specific capabilities unless asked"""
-                        }, {
-                            "role": "user",
-                            "content": question
-                        }],
+                            7. Don't mention specific capabilities unless asked""",
+                            },
+                            {"role": "user", "content": question},
+                        ],
                         stream=False,
                         options={
                             "temperature": 0.7,
                             "top_p": 0.9,
                             "top_k": 40,
-                            "num_ctx": 4096
-                        }
+                            "num_ctx": 4096,
+                        },
                     )
-                    flexible_response = f"[AI Knowledge: {response.message.content.strip()}]"
+                    flexible_response = (
+                        f"[AI Knowledge: {response.message.content.strip()}]"
+                    )
 
                 greeting_responses = {
                     "accurate": "Hi, Im Hiraku, I can answer question base on the file you provided. But Im in Accurate mode now so I should only respond based on documents, but I don't see any greeting-related content. Would you like to ask something about the documents?",
                     "interactive": "Hello! [AI Knowledge: I'm here to help you! While I don't see any greetings in the documents, I can still chat with you.] What would you like to know about?",
-                    "flexible": flexible_response
+                    "flexible": flexible_response,
                 }
 
                 return {
                     "answer": greeting_responses[self.precision_mode],
-                    "sources": []
+                    "sources": [],
                 }
 
             # For non-greeting queries, perform similarity search
@@ -255,7 +292,6 @@ class HirakuRAG:
                     4. Cite specific sources when referencing information
                     5. Maintain strict accuracy over completeness
                     6. For follow-up questions, consider the previous conversation context""",
-
                 "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
                     1. Primarily use information from the provided context
                     2. When adding knowledge beyond the context:
@@ -264,7 +300,6 @@ class HirakuRAG:
                     4. Consider the previous conversation context for follow-up questions
                     5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
                     6. Maintain transparency about information sources""",
-
                 "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant with knowledge updated as of April 2024. Follow these guidelines:
 
                     Core Interaction Guidelines:
@@ -293,18 +328,15 @@ class HirakuRAG:
                         - Helpful and informative tone
                         - Well-structured responses
                         - Consistency throughout the conversation
-                        - Intellectual engagement with user's ideas"""
+                        - Intellectual engagement with user's ideas""",
             }
 
             messages = [
-                {
-                    "role": "system",
-                    "content": system_messages[self.precision_mode]
-                },
+                {"role": "system", "content": system_messages[self.precision_mode]},
                 {
                     "role": "user",
-                    "content": f"Context: {context}\n{conversation_context}\n\nCurrent question: {question}"
-                }
+                    "content": f"Context: {context}\n{conversation_context}\n\nCurrent question: {question}",
+                },
             ]
 
             # Generate response using Ollama with streaming
@@ -316,8 +348,8 @@ class HirakuRAG:
                     "temperature": 0.7,
                     "top_p": 0.9,
                     "top_k": 40,
-                    "num_ctx": 4096
-                }
+                    "num_ctx": 4096,
+                },
             )
 
             # Extract answer

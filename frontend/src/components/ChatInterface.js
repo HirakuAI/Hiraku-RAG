@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Upload, Settings } from "lucide-react";
+import { Send, Upload, Settings, LogOut } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import CodeBlock from "./CodeBlock";
 
@@ -46,7 +46,7 @@ function TypeWriter({ content, onComplete }) {
   );
 }
 
-function ChatInterface() {
+function ChatInterface({ authToken, onLogout }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -56,40 +56,58 @@ function ChatInterface() {
   const [showModeSelector, setShowModeSelector] = useState(false);
 
   const modeDescriptions = {
-    accurate: "Only uses information from provided documents. Best for factual queries about your documents.",
-    interactive: "Primarily uses document information while allowing helpful supplementary knowledge. Good balance for most uses.",
-    flexible: "Combines document knowledge with broader understanding. Best for exploratory discussions and complex topics.",
+    accurate:
+      "Only uses information from provided documents. Best for factual queries about your documents.",
+    interactive:
+      "Primarily uses document information while allowing helpful supplementary knowledge. Good balance for most uses.",
+    flexible:
+      "Combines document knowledge with broader understanding. Best for exploratory discussions and complex topics.",
   };
 
   const handleModeChange = async (mode) => {
     try {
       const response = await fetch("http://localhost:1512/api/set-precision", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({ mode }),
       });
 
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
       if (response.ok) {
         setPrecisionMode(mode);
         setShowModeSelector(false);
-        setMessages(prev => [...prev, {
-          type: "system",
-          content: `Mode changed to ${mode}. ${modeDescriptions[mode]}`
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "system",
+            content: `Mode changed to ${mode}. ${modeDescriptions[mode]}`,
+          },
+        ]);
       } else {
         throw new Error("Failed to change mode");
       }
     } catch (error) {
-      setMessages(prev => [...prev, {
-        type: "error",
-        content: `Error changing mode: ${error.message}`
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "error",
+          content: `Error changing mode: ${error.message}`,
+        },
+      ]);
     }
   };
 
   const ModeSelector = () => (
     <div className="absolute bottom-20 right-4 bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 w-80">
-      <h3 className="text-lg font-semibold mb-3 text-gray-200">Response Mode</h3>
+      <h3 className="text-lg font-semibold mb-3 text-gray-200">
+        Response Mode
+      </h3>
       {Object.entries(modeDescriptions).map(([mode, description]) => (
         <button
           key={mode}
@@ -130,10 +148,17 @@ function ChatInterface() {
     try {
       const response = await fetch("http://localhost:1512/api/query", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({ question }),
       });
 
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
       const data = await response.json();
       if (response.ok) {
         // Remove thinking message and add assistant response
@@ -181,8 +206,16 @@ function ChatInterface() {
           try {
             const response = await fetch("http://localhost:1512/api/upload", {
               method: "POST",
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
               body: formData,
             });
+
+            if (response.status === 401) {
+              onLogout();
+              return;
+            }
 
             const data = await response.json();
             if (response.ok) {
@@ -251,9 +284,15 @@ function ChatInterface() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-900">
-      {/* Header */}
-      <div className="bg-gray-800 shadow p-4">
+      <div className="bg-gray-800 shadow p-4 flex justify-between items-center">
         <h1 className="text-xl font-bold text-white">Hiraku AI</h1>
+        <button
+          onClick={onLogout}
+          className="p-2 text-gray-400 hover:text-gray-200 flex items-center gap-2"
+        >
+          <LogOut className="w-5 h-5" />
+          <span>Logout</span>
+        </button>
       </div>
 
       {/* Messages */}
@@ -370,7 +409,8 @@ function ChatInterface() {
           {showModeSelector && <ModeSelector />}
           {precisionMode === "flexible" && (
             <div className="text-yellow-500 text-xs mt-2 text-center">
-              ⚠️ Hiraku can make mistakes in flexible mode. Please double-check responses.
+              ⚠️ Hiraku can make mistakes in flexible mode. Please double-check
+              responses.
             </div>
           )}
         </div>

@@ -223,10 +223,10 @@ class DatabaseManager:
     def get_document_by_path(self, filepath: str) -> Optional[Dict]:
         """
         Get document metadata by filepath.
-        
+
         Args:
             filepath: Path to the document file
-        
+
         Returns:
             Dictionary containing document metadata or None if not found
         """
