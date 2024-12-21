@@ -47,12 +47,15 @@ function TypeWriter({ content, onComplete }) {
 }
 
 function ChatInterface({ authToken, onLogout }) {
+  const [initialized, setInitialized] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
-  const [precisionMode, setPrecisionMode] = useState("interactive");
+  const [precisionMode, setPrecisionMode] = useState(() => {
+    return localStorage.getItem("precision_mode") || "interactive";
+  });
   const [showModeSelector, setShowModeSelector] = useState(false);
 
   const modeDescriptions = {
@@ -79,8 +82,10 @@ function ChatInterface({ authToken, onLogout }) {
         onLogout();
         return;
       }
+
       if (response.ok) {
         setPrecisionMode(mode);
+        localStorage.setItem("precision_mode", mode);
         setShowModeSelector(false);
         setMessages((prev) => [
           ...prev,
@@ -130,6 +135,64 @@ function ChatInterface({ authToken, onLogout }) {
   };
 
   useEffect(scrollToBottom, [messages]);
+
+  useEffect(() => {
+    const initializeUserData = async () => {
+      try {
+        const [historyResponse, modeResponse] = await Promise.all([
+          fetch("http://localhost:1512/api/chat-history", {
+            headers: { Authorization: `Bearer ${authToken}` },
+          }),
+          fetch("http://localhost:1512/api/get-precision", {
+            headers: { Authorization: `Bearer ${authToken}` },
+          }),
+        ]);
+
+        if (historyResponse.status === 401 || modeResponse.status === 401) {
+          onLogout();
+          return;
+        }
+
+        if (historyResponse.ok) {
+          const historyData = await historyResponse.json();
+          setMessages(
+            historyData.messages.map((msg) => ({
+              type: msg.type,
+              content: msg.content,
+              isTyping: false,
+            }))
+          );
+        }
+
+        if (modeResponse.ok) {
+          const modeData = await modeResponse.json();
+          setPrecisionMode(modeData.mode);
+          localStorage.setItem("precision_mode", modeData.mode);
+        }
+
+        setInitialized(true);
+      } catch (error) {
+        console.error("Error initializing user data:", error);
+        setMessages([
+          {
+            type: "error",
+            content: "Failed to load user data. Please refresh the page.",
+          },
+        ]);
+        setInitialized(true);
+      }
+    };
+
+    if (authToken && !initialized) {
+      initializeUserData();
+    }
+  }, [authToken, initialized, onLogout]);
+
+  useEffect(() => {
+    if (initialized) {
+      scrollToBottom();
+    }
+  }, [messages, initialized]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -286,73 +349,90 @@ function ChatInterface({ authToken, onLogout }) {
     <div className="flex flex-col h-screen bg-gray-900">
       <div className="bg-gray-800 shadow p-4 flex justify-between items-center">
         <h1 className="text-xl font-bold text-white">Hiraku AI</h1>
-        <button
-          onClick={onLogout}
-          className="p-2 text-gray-400 hover:text-gray-200 flex items-center gap-2"
-        >
-          <LogOut className="w-5 h-5" />
-          <span>Logout</span>
-        </button>
+        <div className="flex items-center gap-4">
+          <span className="text-gray-400 text-sm">
+            {!initialized ? "Loading history..." : ""}
+          </span>
+          <button
+            onClick={onLogout}
+            className="p-2 text-gray-400 hover:text-gray-200 flex items-center gap-2"
+          >
+            <LogOut className="w-5 h-5" />
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, idx) => (
-          <div
-            key={idx}
-            className={`flex ${
-              message.type === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
-            {message.type === "thinking" ? (
-              <ThinkingAnimation />
-            ) : (
-              <div
-                className={`max-w-3xl p-4 rounded-lg ${
-                  message.type === "user"
-                    ? "bg-blue-600 text-white"
-                    : message.type === "assistant"
-                    ? "bg-gray-800 text-gray-100"
-                    : message.type === "error"
-                    ? "bg-red-900 text-red-100"
-                    : "bg-gray-700 text-gray-100"
-                }`}
-              >
-                {message.type === "assistant" && message.isTyping ? (
-                  <TypeWriter
-                    content={message.content}
-                    onComplete={() => {
-                      setMessages((prev) =>
-                        prev.map((msg, i) =>
-                          i === idx ? { ...msg, isTyping: false } : msg
-                        )
-                      );
-                    }}
-                  />
-                ) : (
-                  <ReactMarkdown
-                    className="markdown-content"
-                    components={components}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
-                )}
-
-                {message.sources && !message.isTyping && (
-                  <div className="mt-2 text-xs space-y-1">
-                    <div className="text-gray-400 font-semibold">Sources:</div>
-                    {message.sources.map((source, i) => (
-                      <div key={i} className="text-gray-400">
-                        • {source.source} (Similarity:{" "}
-                        {(source.similarity * 100).toFixed(1)}%)
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+        {!initialized ? (
+          <div className="flex justify-center">
+            <ThinkingAnimation />
           </div>
-        ))}
+        ) : messages.length === 0 ? (
+          <div className="text-center text-gray-500 mt-8">
+            No messages yet. Start a conversation!
+          </div>
+        ) : (
+          messages.map((message, idx) => (
+            <div
+              key={idx}
+              className={`flex ${
+                message.type === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              {message.type === "thinking" ? (
+                <ThinkingAnimation />
+              ) : (
+                <div
+                  className={`max-w-3xl p-4 rounded-lg ${
+                    message.type === "user"
+                      ? "bg-blue-600 text-white"
+                      : message.type === "assistant"
+                      ? "bg-gray-800 text-gray-100"
+                      : message.type === "error"
+                      ? "bg-red-900 text-red-100"
+                      : "bg-gray-700 text-gray-100"
+                  }`}
+                >
+                  {message.type === "assistant" && message.isTyping ? (
+                    <TypeWriter
+                      content={message.content}
+                      onComplete={() => {
+                        setMessages((prev) =>
+                          prev.map((msg, i) =>
+                            i === idx ? { ...msg, isTyping: false } : msg
+                          )
+                        );
+                      }}
+                    />
+                  ) : (
+                    <ReactMarkdown
+                      className="markdown-content"
+                      components={components}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  )}
+
+                  {message.sources && !message.isTyping && (
+                    <div className="mt-2 text-xs space-y-1">
+                      <div className="text-gray-400 font-semibold">
+                        Sources:
+                      </div>
+                      {message.sources.map((source, i) => (
+                        <div key={i} className="text-gray-400">
+                          • {source.source} (Similarity:{" "}
+                          {(source.similarity * 100).toFixed(1)}%)
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
 

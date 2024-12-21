@@ -155,6 +155,18 @@ def set_precision(user_info):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/get-precision", methods=["GET"])
+@require_auth
+def get_precision(user_info):
+    """Get user's precision mode setting"""
+    try:
+        rag = get_user_rag(user_info["username"])
+        return jsonify({"mode": rag.precision_mode})
+    except Exception as e:
+        logging.error(f"Error getting precision mode: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/register", methods=["POST"])
 def register():
     try:
@@ -195,6 +207,27 @@ def login():
     except Exception as e:
         logging.error(f"Login error: {str(e)}")
         return jsonify({"error": "Login failed"}), 500
+
+
+@app.route("/api/chat-history", methods=["GET"])
+@require_auth
+def get_chat_history(user_info):
+    """Get chat history for the authenticated user"""
+    try:
+        history = user_manager.get_chat_history(user_info['user_id'])
+        return jsonify({
+            "messages": [
+                {
+                    "type": msg['role'],  # 'user' or 'assistant' 
+                    "content": msg['content'],
+                    "timestamp": msg['timestamp']
+                }
+                for msg in history
+            ]
+        })
+    except Exception as e:
+        logging.error(f"Error fetching chat history: {str(e)}")
+        return jsonify({"error": "Failed to fetch chat history"}), 500
 
 
 if __name__ == "__main__":
