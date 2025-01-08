@@ -40,13 +40,14 @@ class HirakuRAG:
         logger.info(f"Using device: {self.device}")
 
         # Setup user-specific paths
-        self.user_dir = os.path.join("private", username)
-        self.db_path = os.path.join(self.user_dir, "rag.db")
+        self.user_dir = os.path.join("private", "users", username)
+        self.db_path = os.path.join(self.user_dir, "chats", "rag.db")
         self.vector_dir = os.path.join(self.user_dir, "vectordb")
         self.uploads_dir = os.path.join(self.user_dir, "uploads")
 
         # Create user directories
         os.makedirs(self.user_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         os.makedirs(self.uploads_dir, exist_ok=True)
         os.makedirs(self.vector_dir, exist_ok=True)
 
@@ -77,6 +78,56 @@ class HirakuRAG:
 
         self.precision_mode = "interactive"  # Changed default to interactive mode
 
+        # System messages for different precision modes
+        self.system_messages = {
+            "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
+            1. ONLY use information from the given context
+            2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
+            3. Do not make assumptions or add external knowledge
+            4. Cite specific sources when referencing information
+            5. Maintain strict accuracy over completeness
+            6. For follow-up questions, consider the previous conversation context""",
+
+            "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
+            1. Primarily use information from the provided context
+            2. When adding knowledge beyond the context:
+            - Clearly mark such information with [AI Knowledge: your text]
+            3. Always distinguish between document information and supplementary knowledge
+            4. Consider the previous conversation context for follow-up questions
+            5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
+            6. Maintain transparency about information sources""",
+
+            "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant. Follow these guidelines:
+
+            Core Interaction Guidelines:
+            1. First check if the question can be answered using the provided context
+            2. When adding knowledge beyond the context, clearly distinguish between:
+            - Document information
+            - AI knowledge (marked with [AI Knowledge: text])
+            - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
+
+            Response Characteristics:
+            3. Be intellectually curious and engage in thoughtful discussion
+            4. Think through problems step-by-step, especially for math or logic questions
+            5. For very long tasks, offer to break them down and get user feedback on each part
+            6. Use markdown for code blocks and offer to explain the code afterward
+
+            Special Considerations:
+            7. For obscure topics, end with a reminder about potential hallucination
+            8. When citing sources, note that citations should be double-checked
+            9. Handle controversial topics with care and clear information
+            10. For tasks involving various viewpoints, provide assistance regardless of own views
+
+            Communication Style:
+            11. Be direct - avoid apologizing when declining tasks
+            12. Maintain:
+            - Clear distinction between document content and AI knowledge
+            - Helpful and informative tone
+            - Well-structured responses
+            - Consistency throughout the conversation
+            - Intellectual engagement with user's ideas""",
+        }
+
     def set_precision_mode(self, mode: str):
         """Set the precision mode for responses."""
         valid_modes = {"accurate", "interactive", "flexible"}
@@ -99,26 +150,10 @@ class HirakuRAG:
                     continue
                 processed_paths.add(file_path)
 
-                # Copy to user uploads directory if needed
-                target_path = Path(self.uploads_dir) / Path(file_path).name
-                if not target_path.exists():
-                    import shutil
-
-                    shutil.copy2(file_path, target_path)
-
-                # Check if already processed
-                existing_doc = self.db_manager.get_document_by_path(str(target_path))
-                if existing_doc and self.vector_store.has_document(existing_doc["id"]):
-                    logger.info(f"Document already processed: {target_path}")
-                    continue
-
-                # Process single file
-                processed_docs = self.doc_processor.process_file(str(target_path))
+                # Process the file directly from its location
+                processed_docs = self.doc_processor.process_file(file_path)
 
                 for doc in processed_docs:
-                    if Path(doc["metadata"]["file_path"]).name != target_path.name:
-                        continue
-
                     if doc["metadata"]["processing_status"] == "success":
                         doc_id = doc["metadata"]["doc_id"]
 
@@ -138,13 +173,9 @@ class HirakuRAG:
                             chunk_id = f"{doc_id}_chunk_{i}"
 
                             # Check if chunk already exists
-                            existing_chunk = self.db_manager.get_chunk_metadata(
-                                chunk_id
-                            )
+                            existing_chunk = self.db_manager.get_chunk_metadata(chunk_id)
                             if existing_chunk:
-                                logger.warning(
-                                    f"Chunk {chunk_id} already exists, skipping"
-                                )
+                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
                                 continue
 
                             # Try to add chunk to database first
@@ -153,17 +184,13 @@ class HirakuRAG:
                                 # Only add to vectors if database insertion succeeded
                                 chunk_ids.append(chunk_id)
                                 chunk_texts.append(chunk)
-                                chunk_metadatas.append(
-                                    {
-                                        "document_id": doc_id,
-                                        "chunk_index": i,
-                                        "source": doc["metadata"]["file_path"],
-                                    }
-                                )
+                                chunk_metadatas.append({
+                                    "document_id": doc_id,
+                                    "chunk_index": i,
+                                    "source": doc["metadata"]["file_path"],
+                                })
                             except sqlite3.IntegrityError:
-                                logger.warning(
-                                    f"Chunk {chunk_id} already exists, skipping"
-                                )
+                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
                                 continue
                             except Exception as e:
                                 logger.error(f"Error adding chunk {chunk_id}: {e}")
@@ -178,26 +205,18 @@ class HirakuRAG:
                                     metadatas=chunk_metadatas,
                                 )
                                 total_chunks += len(chunk_texts)
-                                logger.info(
-                                    f"Added {len(chunk_texts)} chunks from {target_path}"
-                                )
+                                logger.info(f"Added {len(chunk_texts)} chunks from {file_path}")
                             except Exception as e:
-                                logger.error(
-                                    f"Error adding chunks to vector store: {e}"
-                                )
+                                logger.error(f"Error adding chunks to vector store: {e}")
 
                         successful_files += 1
                     else:
-                        logger.error(
-                            f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}"
-                        )
+                        logger.error(f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}")
 
             except Exception as e:
                 logger.error(f"Error adding document {file_path}: {e}")
 
-        logger.info(
-            f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks"
-        )
+        logger.info(f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks")
 
     def query(
         self, question: str, history: List[Dict[str, str]] = None, k: int = 3
@@ -206,140 +225,61 @@ class HirakuRAG:
 
         try:
             normalized_question = question.lower().strip().rstrip("?!.,")
-
-            casual_greetings = {
-                "hi",
-                "hello",
-                "hey",
-                "how are you",
-                "how's it going",
-                "what's up",
-                "good morning",
-                "good afternoon",
-                "good evening",
-                "hi there",
-                "hello there",
-                "how are you doing",
-                "how do you do",
-                "how are things",
-                "how's everything",
-            }
-
-            is_greeting = any(
-                greeting in normalized_question for greeting in casual_greetings
-            )
-
-            if is_greeting:
-                flexible_response = None
-                if self.precision_mode == "flexible":
-                    response = self.client.chat(
-                        model=self.model_name,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": """You are Hiraku, a friendly and knowledgeable AI assistant. 
-                            When responding to greetings:
-                            1. Be natural and conversational
-                            2. Vary your responses rather than using templates
-                            3. Match the user's level of formality
-                            4. Keep responses concise but warm
-                            5. Mention that you're ready to help
-                            6. Don't use bullet points or structured formats
-                            7. Don't mention specific capabilities unless asked""",
-                            },
-                            {"role": "user", "content": question},
-                        ],
-                        stream=False,
-                        options={
-                            "temperature": 0.7,
-                            "top_p": 0.9,
-                            "top_k": 40,
-                            "num_ctx": 4096,
-                        },
-                    )
-                    flexible_response = (
-                        f"[AI Knowledge: {response.message.content.strip()}]"
-                    )
-
-                greeting_responses = {
-                    "accurate": "Hi, Im Hiraku, I can answer question base on the file you provided. But Im in Accurate mode now so I should only respond based on documents, but I don't see any greeting-related content. Would you like to ask something about the documents?",
-                    "interactive": "Hello! [AI Knowledge: I'm here to help you! While I don't see any greetings in the documents, I can still chat with you.] What would you like to know about?",
-                    "flexible": flexible_response,
-                }
-
-                return {
-                    "answer": greeting_responses[self.precision_mode],
-                    "sources": [],
-                }
+            
+            # Get relevant documents
+            relevant_docs = []
+            if self.vector_store_has_documents:
+                search_results = self.vector_store.similarity_search(
+                    normalized_question, k=k
+                )
+                if search_results:
+                    relevant_docs = search_results.get("documents", [[]])[0]
+                    relevant_metadatas = search_results.get("metadatas", [[]])[0]
 
             # For non-greeting queries, perform similarity search
-            results = self.vector_store.similarity_search(question, k)
-            context = "\n".join(results["documents"][0])
-
-            # Format conversation history
-            conversation_context = ""
+            # Limit chat history to only the most recent relevant context (last 3 messages)
+            recent_history = []
             if history and len(history) > 0:
-                conversation_context = "\nPrevious conversation:\n" + "\n".join(
-                    f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                    for msg in history
-                )
+                # Get relevant history
+                relevant_history = []
+                for msg in reversed(history[-6:]):  # Look at last 6 messages
+                    if len(relevant_history) >= 3:  # Only keep last 3 relevant messages
+                        break
+                    # Check if message is relevant to current question using simple keyword matching
+                    if any(
+                        word in msg["content"].lower()
+                        for word in normalized_question.split()
+                    ):
+                        relevant_history.append(msg)
+                recent_history = list(reversed(relevant_history))
 
-            system_messages = {
-                "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
-                    1. ONLY use information from the given context
-                    2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
-                    3. Do not make assumptions or add external knowledge
-                    4. Cite specific sources when referencing information
-                    5. Maintain strict accuracy over completeness
-                    6. For follow-up questions, consider the previous conversation context""",
-                "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
-                    1. Primarily use information from the provided context
-                    2. When adding knowledge beyond the context:
-                       - Clearly mark such information with [AI Knowledge: your text]
-                    3. Always distinguish between document information and supplementary knowledge
-                    4. Consider the previous conversation context for follow-up questions
-                    5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
-                    6. Maintain transparency about information sources""",
-                "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant with knowledge updated as of April 2024. Follow these guidelines:
-
-                    Core Interaction Guidelines:
-                    1. First check if the question can be answered using the provided context
-                    2. When adding knowledge beyond the context, clearly distinguish between:
-                       - Document information
-                       - AI knowledge (marked with [AI Knowledge: text])
-                       - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
-
-                    Response Characteristics:
-                    3. Be intellectually curious and engage in thoughtful discussion
-                    4. Think through problems step-by-step, especially for math or logic questions
-                    5. For very long tasks, offer to break them down and get user feedback on each part
-                    6. Use markdown for code blocks and offer to explain the code afterward
-
-                    Special Considerations:
-                    7. For obscure topics, end with a reminder about potential hallucination
-                    8. When citing sources, note that citations should be double-checked
-                    9. Handle controversial topics with care and clear information
-                    10. For tasks involving various viewpoints, provide assistance regardless of own views
-
-                    Communication Style:
-                    11. Be direct - avoid apologizing when declining tasks
-                    12. Maintain:
-                        - Clear distinction between document content and AI knowledge
-                        - Helpful and informative tone
-                        - Well-structured responses
-                        - Consistency throughout the conversation
-                        - Intellectual engagement with user's ideas""",
-            }
-
+            # Prepare the conversation messages
             messages = [
-                {"role": "system", "content": system_messages[self.precision_mode]},
                 {
-                    "role": "user",
-                    "content": f"Context: {context}\n{conversation_context}\n\nCurrent question: {question}",
-                },
+                    "role": "system",
+                    "content": self.system_messages[self.precision_mode],
+                }
             ]
 
-            # Generate response using Ollama with streaming
+            # Add document context if available
+            if relevant_docs:
+                context = "\n\n".join(relevant_docs)
+                messages.append({
+                    "role": "system",
+                    "content": f"Here are the relevant documents:\n\n{context}"
+                })
+
+            # Add chat history if available
+            for msg in recent_history:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+            # Add the current question
+            messages.append({"role": "user", "content": question})
+
+            # Get response from LLM
             response = self.client.chat(
                 model=self.model_name,
                 messages=messages,
@@ -352,24 +292,16 @@ class HirakuRAG:
                 },
             )
 
-            # Extract answer
-            answer = response.message.content.strip()
-
-            # Prepare sources with metadata
-            sources = [
-                {
-                    "content": doc[:200] + "..." if len(doc) > 200 else doc,
-                    "source": meta.get("source", "Unknown"),
-                    "similarity": 1 - dist,
-                }
-                for doc, meta, dist in zip(
-                    results["documents"][0],
-                    results["metadatas"][0],
-                    results["distances"][0],
-                )
-            ]
-
-            return {"answer": answer, "sources": sources}
+            return {
+                "answer": response.message.content.strip(),
+                "sources": [
+                    {
+                        "content": doc,
+                        "metadata": metadata,
+                    }
+                    for doc, metadata in zip(relevant_docs, relevant_metadatas)
+                ] if relevant_docs else []
+            }
 
         except Exception as e:
             logger.error(f"Error in query: {e}")
@@ -377,6 +309,75 @@ class HirakuRAG:
                 "answer": "An error occurred while processing your query.",
                 "sources": [],
             }
+
+    def stream_query(self, question: str, history: List[Dict[str, str]] = None, k: int = 3):
+        """Stream query responses token by token."""
+        try:
+            normalized_question = question.lower().strip().rstrip("?!.,")
+            
+            # Get relevant documents
+            relevant_docs = []
+            if self.vector_store_has_documents:
+                search_results = self.vector_store.similarity_search(
+                    normalized_question, k=k
+                )
+                if search_results:
+                    relevant_docs = search_results.get("documents", [[]])[0]
+
+            # Get relevant history
+            recent_history = []
+            if history and len(history) > 0:
+                relevant_history = []
+                for msg in reversed(history[-6:]):
+                    if len(relevant_history) >= 3:
+                        break
+                    if any(word in msg["content"].lower() for word in normalized_question.split()):
+                        relevant_history.append(msg)
+                recent_history = list(reversed(relevant_history))
+
+            # Prepare messages
+            messages = [
+                {
+                    "role": "system",
+                    "content": self.system_messages[self.precision_mode],
+                }
+            ]
+
+            if relevant_docs:
+                context = "\n\n".join(relevant_docs)
+                messages.append({
+                    "role": "system",
+                    "content": f"Here are the relevant documents:\n\n{context}"
+                })
+
+            for msg in recent_history:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+            messages.append({"role": "user", "content": question})
+
+            # Stream response from LLM
+            response_stream = self.client.chat(
+                model=self.model_name,
+                messages=messages,
+                stream=True,
+                options={
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "num_ctx": 4096,
+                },
+            )
+
+            for chunk in response_stream:
+                if chunk.message and chunk.message.content:
+                    yield chunk.message.content
+
+        except Exception as e:
+            logger.error(f"Error in stream_query: {e}")
+            yield "An error occurred while processing your query."
 
     @property
     def vector_store_has_documents(self) -> bool:
