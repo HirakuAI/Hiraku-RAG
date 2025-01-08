@@ -40,13 +40,14 @@ class HirakuRAG:
         logger.info(f"Using device: {self.device}")
 
         # Setup user-specific paths
-        self.user_dir = os.path.join("private", username)
-        self.db_path = os.path.join(self.user_dir, "rag.db")
+        self.user_dir = os.path.join("private", "users", username)
+        self.db_path = os.path.join(self.user_dir, "chats", "rag.db")
         self.vector_dir = os.path.join(self.user_dir, "vectordb")
         self.uploads_dir = os.path.join(self.user_dir, "uploads")
 
         # Create user directories
         os.makedirs(self.user_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         os.makedirs(self.uploads_dir, exist_ok=True)
         os.makedirs(self.vector_dir, exist_ok=True)
 
@@ -99,26 +100,10 @@ class HirakuRAG:
                     continue
                 processed_paths.add(file_path)
 
-                # Copy to user uploads directory if needed
-                target_path = Path(self.uploads_dir) / Path(file_path).name
-                if not target_path.exists():
-                    import shutil
-
-                    shutil.copy2(file_path, target_path)
-
-                # Check if already processed
-                existing_doc = self.db_manager.get_document_by_path(str(target_path))
-                if existing_doc and self.vector_store.has_document(existing_doc["id"]):
-                    logger.info(f"Document already processed: {target_path}")
-                    continue
-
-                # Process single file
-                processed_docs = self.doc_processor.process_file(str(target_path))
+                # Process the file directly from its location
+                processed_docs = self.doc_processor.process_file(file_path)
 
                 for doc in processed_docs:
-                    if Path(doc["metadata"]["file_path"]).name != target_path.name:
-                        continue
-
                     if doc["metadata"]["processing_status"] == "success":
                         doc_id = doc["metadata"]["doc_id"]
 
@@ -138,13 +123,9 @@ class HirakuRAG:
                             chunk_id = f"{doc_id}_chunk_{i}"
 
                             # Check if chunk already exists
-                            existing_chunk = self.db_manager.get_chunk_metadata(
-                                chunk_id
-                            )
+                            existing_chunk = self.db_manager.get_chunk_metadata(chunk_id)
                             if existing_chunk:
-                                logger.warning(
-                                    f"Chunk {chunk_id} already exists, skipping"
-                                )
+                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
                                 continue
 
                             # Try to add chunk to database first
@@ -153,17 +134,13 @@ class HirakuRAG:
                                 # Only add to vectors if database insertion succeeded
                                 chunk_ids.append(chunk_id)
                                 chunk_texts.append(chunk)
-                                chunk_metadatas.append(
-                                    {
-                                        "document_id": doc_id,
-                                        "chunk_index": i,
-                                        "source": doc["metadata"]["file_path"],
-                                    }
-                                )
+                                chunk_metadatas.append({
+                                    "document_id": doc_id,
+                                    "chunk_index": i,
+                                    "source": doc["metadata"]["file_path"],
+                                })
                             except sqlite3.IntegrityError:
-                                logger.warning(
-                                    f"Chunk {chunk_id} already exists, skipping"
-                                )
+                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
                                 continue
                             except Exception as e:
                                 logger.error(f"Error adding chunk {chunk_id}: {e}")
@@ -178,26 +155,18 @@ class HirakuRAG:
                                     metadatas=chunk_metadatas,
                                 )
                                 total_chunks += len(chunk_texts)
-                                logger.info(
-                                    f"Added {len(chunk_texts)} chunks from {target_path}"
-                                )
+                                logger.info(f"Added {len(chunk_texts)} chunks from {file_path}")
                             except Exception as e:
-                                logger.error(
-                                    f"Error adding chunks to vector store: {e}"
-                                )
+                                logger.error(f"Error adding chunks to vector store: {e}")
 
                         successful_files += 1
                     else:
-                        logger.error(
-                            f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}"
-                        )
+                        logger.error(f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}")
 
             except Exception as e:
                 logger.error(f"Error adding document {file_path}: {e}")
 
-        logger.info(
-            f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks"
-        )
+        logger.info(f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks")
 
     def query(
         self, question: str, history: List[Dict[str, str]] = None, k: int = 3
@@ -276,12 +245,26 @@ class HirakuRAG:
             results = self.vector_store.similarity_search(question, k)
             context = "\n".join(results["documents"][0])
 
+            # Limit chat history to only the most recent relevant context (last 3 messages)
+            recent_history = []
+            if history and len(history) > 0:
+                # Get the last 3 messages that are relevant to the current question
+                relevant_history = []
+                for msg in reversed(history[-6:]):  # Look at last 6 messages
+                    if len(relevant_history) >= 3:  # Only keep last 3 relevant messages
+                        break
+                    # Check if message is relevant to current question using simple keyword matching
+                    msg_text = msg['content'].lower()
+                    if any(word in msg_text for word in normalized_question.split()):
+                        relevant_history.append(msg)
+                recent_history = list(reversed(relevant_history))
+
             # Format conversation history
             conversation_context = ""
-            if history and len(history) > 0:
-                conversation_context = "\nPrevious conversation:\n" + "\n".join(
+            if recent_history:
+                conversation_context = "\nRecent relevant conversation:\n" + "\n".join(
                     f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                    for msg in history
+                    for msg in recent_history
                 )
 
             system_messages = {
@@ -291,14 +274,14 @@ class HirakuRAG:
                     3. Do not make assumptions or add external knowledge
                     4. Cite specific sources when referencing information
                     5. Maintain strict accuracy over completeness
-                    6. For follow-up questions, consider the previous conversation context""",
+                    6. For follow-up questions, consider ONLY the recent relevant conversation context provided""",
                 "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
                     1. Primarily use information from the provided context
                     2. When adding knowledge beyond the context:
                        - Clearly mark such information with [AI Knowledge: your text]
                     3. Always distinguish between document information and supplementary knowledge
-                    4. Consider the previous conversation context for follow-up questions
-                    5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
+                    4. Consider ONLY the recent relevant conversation context for follow-up questions
+                    5. If a follow-up question refers to previous topics, maintain consistency with the recent relevant responses
                     6. Maintain transparency about information sources""",
                 "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant with knowledge updated as of April 2024. Follow these guidelines:
 
@@ -327,7 +310,7 @@ class HirakuRAG:
                         - Clear distinction between document content and AI knowledge
                         - Helpful and informative tone
                         - Well-structured responses
-                        - Consistency throughout the conversation
+                        - Consistency with recent relevant conversation context
                         - Intellectual engagement with user's ideas""",
             }
 

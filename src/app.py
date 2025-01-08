@@ -6,18 +6,29 @@ Date:           December 21, 2024
 Description:    Flask API for RAG system with user authentication.
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from rag_system import HirakuRAG
 from user_management import UserManager
 import os
 import logging
 from functools import wraps
+from werkzeug.utils import secure_filename
+
+# Get the project root directory (parent of src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:3000"],  # Next.js default port
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
 user_manager = None
-rag_instances = {}  # Store RAG instances per user
+rag_instances = {}
 _initialized = False
 
 # logging
@@ -34,10 +45,24 @@ def init_system():
         return
 
     try:
-        os.makedirs("private", exist_ok=True)
+        # Create base private directory in project root
+        private_dir = os.path.join(PROJECT_ROOT, "private")
+        os.makedirs(private_dir, exist_ok=True)
+        
+        # Create subdirectories
+        subdirs = ["users", "uploads", "vectordb"]
+        for subdir in subdirs:
+            os.makedirs(os.path.join(private_dir, subdir), exist_ok=True)
+
+        # Initialize user manager with proper database path
         if user_manager is None:
-            user_manager = UserManager()
+            db_path = os.path.join(private_dir, "users.db")
+            user_manager = UserManager(db_path=db_path)
+            # Initialize the database tables
+            user_manager.init_database()
         _initialized = True
+
+        logging.info("System initialized successfully")
 
     except Exception as e:
         logging.error(f"Error initializing system: {str(e)}")
@@ -76,58 +101,74 @@ def query(user_info):
     try:
         data = request.json
         question = data.get("question", "")
-        history = user_manager.get_chat_history(user_info["user_id"])
+        session_id = data.get("session_id")
+        mode = data.get("mode", "interactive")  # Get mode from request
+        history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
 
         if not question:
             return jsonify({"error": "No question provided"}), 400
 
-        # Get user-specific RAG instance
         rag = get_user_rag(user_info["username"])
+        
+        # Set precision mode if provided
+        if mode:
+            rag.set_precision_mode(mode)
 
+        # Get response from RAG system
         response = rag.query(question, history=history)
 
-        # Save chat history
-        user_manager.save_chat_message(user_info["user_id"], question, "user")
+        # Save the conversation
+        user_manager.save_chat_message(user_info["user_id"], question, "user", session_id)
         user_manager.save_chat_message(
-            user_info["user_id"], response["answer"], "assistant"
+            user_info["user_id"], response.get("answer", ""), "assistant", session_id
         )
 
-        return jsonify(response)
-
+        return jsonify({
+            "answer": response.get("answer", ""),
+            "sources": response.get("sources", [])
+        })
     except Exception as e:
-        logging.error(f"Query error: {str(e)}")
-        return jsonify({"error": "Failed to process query"}), 500
+        logging.error(f"Error in query: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/upload", methods=["POST"])
 @require_auth
 def upload_file(user_info):
-    """Handle file uploads"""
+    """Handle file upload."""
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
 
         file = request.files["file"]
-        if file.filename == "":
+        if not file.filename:
             return jsonify({"error": "No file selected"}), 400
 
-        # Get user-specific RAG instance
-        rag = get_user_rag(user_info["username"])
+        # Get user directory
+        username = user_info["username"]
+        user_dir = user_manager.get_user_dir(username)
+        user_uploads_dir = os.path.join(user_dir, "uploads")
+        os.makedirs(user_uploads_dir, exist_ok=True)
 
-        # File will be saved to user's upload directory by RAG
-        filepath = os.path.join(rag.uploads_dir, file.filename)
-        file.save(filepath)
+        # Save file to user's upload directory
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(user_uploads_dir, filename)
+        file.save(file_path)
 
-        # Process the document
-        rag.add_documents([filepath])
+        # Initialize RAG for user if needed
+        if username not in rag_instances:
+            rag_instances[username] = HirakuRAG(username=username)
+
+        # Process the file with RAG system
+        rag_instances[username].add_documents([file_path])
 
         # Link document to user
-        user_manager.link_document_to_user(
-            user_info["user_id"], os.path.basename(filepath)
-        )
+        user_manager.link_document_to_user(user_info["user_id"], filename)
 
-        logging.info(f"Successfully uploaded and processed: {file.filename}")
-        return jsonify({"message": "File uploaded successfully"})
+        return jsonify({
+            "message": "File uploaded and processed successfully",
+            "filename": filename
+        })
 
     except Exception as e:
         logging.error(f"Upload error: {str(e)}")
@@ -212,22 +253,71 @@ def login():
 @app.route("/api/chat-history", methods=["GET"])
 @require_auth
 def get_chat_history(user_info):
-    """Get chat history for the authenticated user"""
+    """Get chat history for a specific session"""
     try:
-        history = user_manager.get_chat_history(user_info['user_id'])
-        return jsonify({
-            "messages": [
-                {
-                    "type": msg['role'],  # 'user' or 'assistant' 
-                    "content": msg['content'],
-                    "timestamp": msg['timestamp']
-                }
-                for msg in history
-            ]
-        })
+        session_id = request.args.get("session_id", type=int)
+        history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
+        return jsonify({"history": history})
     except Exception as e:
-        logging.error(f"Error fetching chat history: {str(e)}")
-        return jsonify({"error": "Failed to fetch chat history"}), 500
+        logging.error(f"Error getting chat history: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat-sessions", methods=["GET"])
+@require_auth
+def get_chat_sessions(user_info):
+    """Get all chat sessions for a user"""
+    try:
+        sessions = user_manager.get_chat_sessions(user_info["user_id"])
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        logging.error(f"Error getting chat sessions: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat-sessions", methods=["POST"])
+@require_auth
+def create_chat_session(user_info):
+    """Create a new chat session"""
+    try:
+        data = request.json
+        title = data.get("title", "New Chat")
+        session_id = user_manager.create_chat_session(user_info["user_id"], title)
+        return jsonify({"session_id": session_id})
+    except Exception as e:
+        logging.error(f"Error creating chat session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stream", methods=["POST"])
+@require_auth
+def stream_query(user_info):
+    """Handle streaming query requests"""
+    try:
+        data = request.json
+        question = data.get("question", "")
+        session_id = data.get("session_id")
+        history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
+
+        if not question:
+            return jsonify({"error": "No question provided"}), 400
+
+        rag = get_user_rag(user_info["username"])
+
+        def generate():
+            response = ""
+            for chunk in rag.stream_query(question, history=history):
+                response += chunk
+                yield f"data: {chunk}\n\n"
+            
+            # Save the conversation after completion
+            user_manager.save_chat_message(user_info["user_id"], question, "user", session_id)
+            user_manager.save_chat_message(user_info["user_id"], response, "assistant", session_id)
+
+        return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    except Exception as e:
+        logging.error(f"Error in stream query: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

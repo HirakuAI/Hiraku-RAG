@@ -1,61 +1,47 @@
 {
-  "name": "hiraku-frontend",
+  "name": "frontend",
   "version": "0.1.0",
-  "description": "Hiraku: Fuckable AI-powered research assistant Frontend",
-  "author": {
-    "name": "Min Thu Khaing",
-    "email": "MinThuKhaing@uon.edu.au",
-    "url": "https://bontal.net"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yuann3/FYP-Prototype.git"
-  },
-  "homepage": "https://hiraku.bontal.net",
-  "bugs": {
-    "url": "https://github.com/yuann3/FYP-Prototype/issues"
-  },
-  "keywords": [
-    "ai",
-    "research",
-    "assistant",
-    "react",
-    "typescript"
-  ],
   "private": true,
-  "dependencies": {
-    "@tailwindcss/forms": "^0.5.9",
-    "cra-template": "1.2.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-markdown": "^9.0.1",
-    "react-scripts": "5.0.1",
-    "react-syntax-highlighter": "^15.6.1",
-    "tailwindcss": "^3.4.16"
-  },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+  "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.2",
+    "@radix-ui/react-alert-dialog": "^1.1.4",
+    "@radix-ui/react-aspect-ratio": "^1.1.1",
+    "@radix-ui/react-avatar": "^1.1.2",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-dropdown-menu": "^2.1.4",
+    "@radix-ui/react-label": "^2.1.1",
+    "@radix-ui/react-scroll-area": "^1.2.2",
+    "@radix-ui/react-separator": "^1.1.1",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-toast": "^1.2.4",
+    "@radix-ui/react-tooltip": "^1.1.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.469.0",
+    "next": "14.2.16",
+    "next-themes": "^0.4.4",
+    "react": "^18",
+    "react-day-picker": "^9.5.0",
+    "react-dom": "^18",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7"
   },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "devDependencies": {
+    "@shadcn/ui": "^0.0.4",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.16",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
   }
 }
