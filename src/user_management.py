@@ -211,29 +211,59 @@ class UserManager:
             logger.warning(f"Invalid token: {e}")
             return None
 
-    def save_chat_message(self, user_id: int, message: str, role: str, session_id: int = None):
-        """Save a chat message."""
+    def validate_user_session(self, user_id: int, session_id: int) -> bool:
+        """Validate that a session exists and belongs to the user."""
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            
+            # First verify user exists
+            c.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+            if not c.fetchone():
+                logger.warning(f"User {user_id} not found")
+                return False
+            
+            # Then verify session exists and belongs to user
+            c.execute(
+                """
+                SELECT id FROM chat_sessions 
+                WHERE id = ? AND user_id = ?
+                """,
+                (session_id, user_id)
+            )
+            if not c.fetchone():
+                logger.warning(f"Session {session_id} not found or does not belong to user {user_id}")
+                return False
+                
+            return True
+
+    def save_chat_message(self, user_id: int, message: str, role: str, session_id: int) -> Optional[int]:
+        """Save a chat message.
+        
+        Args:
+            user_id: The ID of the user
+            message: The chat message to save
+            role: The role of the message sender
+            session_id: The ID of the chat session (required)
+            
+        Returns:
+            Optional[int]: The session ID if successful, None if validation fails
+            
+        Raises:
+            ValueError: If session_id is not provided
+            Exception: For database errors
+        """
+        if session_id is None:
+            raise ValueError("session_id is required")
+
         try:
-            if session_id is None:
-                # Create a new session if none exists
-                session_id = self.create_chat_session(user_id)
+            # Validate session before proceeding
+            if not self.validate_user_session(user_id, session_id):
+                logger.error(f"Invalid session {session_id} for user {user_id}")
+                return None
 
             with sqlite3.connect(self.db_path) as conn:
                 c = conn.cursor()
                 now = datetime.utcnow()
-                
-                # Verify session exists and belongs to user
-                c.execute(
-                    """
-                    SELECT id FROM chat_sessions 
-                    WHERE id = ? AND user_id = ?
-                    """,
-                    (session_id, user_id)
-                )
-                
-                if not c.fetchone():
-                    # Session doesn't exist or doesn't belong to user
-                    session_id = self.create_chat_session(user_id)
                 
                 # Save the message
                 c.execute(
