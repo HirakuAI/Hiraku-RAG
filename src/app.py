@@ -15,7 +15,6 @@ import logging
 from functools import wraps
 from werkzeug.utils import secure_filename
 
-# Get the project root directory (parent of src/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__)
@@ -31,7 +30,6 @@ user_manager = None
 rag_instances = {}
 _initialized = False
 
-# logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -45,20 +43,16 @@ def init_system():
         return
 
     try:
-        # Create base private directory in project root
         private_dir = os.path.join(PROJECT_ROOT, "private")
         os.makedirs(private_dir, exist_ok=True)
-        
-        # Create subdirectories
+
         subdirs = ["users", "uploads", "vectordb"]
         for subdir in subdirs:
             os.makedirs(os.path.join(private_dir, subdir), exist_ok=True)
 
-        # Initialize user manager with proper database path
         if user_manager is None:
             db_path = os.path.join(private_dir, "users.db")
             user_manager = UserManager(db_path=db_path)
-            # Initialize the database tables
             user_manager.init_database()
         _initialized = True
 
@@ -94,6 +88,16 @@ def get_user_rag(username: str) -> HirakuRAG:
     return rag_instances[username]
 
 
+def get_session_id(value) -> int:
+    """Helper function to consistently handle session_id conversion"""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        raise ValueError("Invalid session_id format")
+
+
 @app.route("/api/query", methods=["POST"])
 @require_auth
 def query(user_info):
@@ -101,23 +105,20 @@ def query(user_info):
     try:
         data = request.json
         question = data.get("question", "")
-        session_id = data.get("session_id")
-        mode = data.get("mode", "interactive")  # Get mode from request
+        session_id = get_session_id(data.get("session_id"))
+        mode = data.get("mode", "interactive")
         history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
 
         if not question:
             return jsonify({"error": "No question provided"}), 400
 
         rag = get_user_rag(user_info["username"])
-        
-        # Set precision mode if provided
+
         if mode:
             rag.set_precision_mode(mode)
 
-        # Get response from RAG system
         response = rag.query(question, history=history)
 
-        # Save the conversation
         user_manager.save_chat_message(user_info["user_id"], question, "user", session_id)
         user_manager.save_chat_message(
             user_info["user_id"], response.get("answer", ""), "assistant", session_id
@@ -144,25 +145,20 @@ def upload_file(user_info):
         if not file.filename:
             return jsonify({"error": "No file selected"}), 400
 
-        # Get user directory
         username = user_info["username"]
         user_dir = user_manager.get_user_dir(username)
         user_uploads_dir = os.path.join(user_dir, "uploads")
         os.makedirs(user_uploads_dir, exist_ok=True)
 
-        # Save file to user's upload directory
         filename = secure_filename(file.filename)
         file_path = os.path.join(user_uploads_dir, filename)
         file.save(file_path)
 
-        # Initialize RAG for user if needed
         if username not in rag_instances:
             rag_instances[username] = HirakuRAG(username=username)
 
-        # Process the file with RAG system
         rag_instances[username].add_documents([file_path])
 
-        # Link document to user
         user_manager.link_document_to_user(user_info["user_id"], filename)
 
         return jsonify({
@@ -185,7 +181,6 @@ def set_precision(user_info):
         if not mode:
             return jsonify({"error": "No mode provided"}), 400
 
-        # Get user-specific RAG instance
         rag = get_user_rag(user_info["username"])
         rag.set_precision_mode(mode)
 
@@ -255,9 +250,11 @@ def login():
 def get_chat_history(user_info):
     """Get chat history for a specific session"""
     try:
-        session_id = request.args.get("session_id", type=int)
+        session_id = get_session_id(request.args.get("session_id"))
         history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
         return jsonify({"history": history})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logging.error(f"Error getting chat history: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -296,7 +293,7 @@ def stream_query(user_info):
     try:
         data = request.json
         question = data.get("question", "")
-        session_id = data.get("session_id")
+        session_id = get_session_id(data.get("session_id"))
         history = user_manager.get_chat_history(user_info["user_id"], session_id=session_id)
 
         if not question:
@@ -309,8 +306,7 @@ def stream_query(user_info):
             for chunk in rag.stream_query(question, history=history):
                 response += chunk
                 yield f"data: {chunk}\n\n"
-            
-            # Save the conversation after completion
+
             user_manager.save_chat_message(user_info["user_id"], question, "user", session_id)
             user_manager.save_chat_message(user_info["user_id"], response, "assistant", session_id)
 

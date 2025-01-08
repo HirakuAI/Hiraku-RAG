@@ -24,6 +24,9 @@ export function FileUpload() {
     try {
       const response = await fetch('/api/upload', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
         body: formData,
       })
 

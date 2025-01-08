@@ -97,7 +97,7 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          session_id: parseInt(sessionId, 10),
+          session_id: sessionId,
           question,
           mode: mode.toLowerCase()
         })
