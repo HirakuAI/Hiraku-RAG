@@ -267,10 +267,10 @@ class UserManager:
             if session_id:
                 c.execute(
                     """
-                    SELECT message, role, timestamp
+                    SELECT message, role, timestamp, id
                     FROM user_chats
                     WHERE user_id = ? AND session_id = ?
-                    ORDER BY timestamp DESC
+                    ORDER BY timestamp ASC, id ASC
                     LIMIT ?
                     """,
                     (user_id, session_id, limit),
@@ -291,10 +291,10 @@ class UserManager:
                     session_id = result[0]
                     c.execute(
                         """
-                        SELECT message, role, timestamp
+                        SELECT message, role, timestamp, id
                         FROM user_chats
                         WHERE user_id = ? AND session_id = ?
-                        ORDER BY timestamp DESC
+                        ORDER BY timestamp ASC, id ASC
                         LIMIT ?
                         """,
                         (user_id, session_id, limit),
@@ -310,7 +310,7 @@ class UserManager:
                 }
                 for row in c.fetchall()
             ]
-            return list(reversed(messages))  # Return in chronological order
+            return messages  # No need to reverse since we're already ordering by ASC
 
     def link_document_to_user(self, user_id: int, document_id: str):
         """Link a document to a user."""

@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ChevronDown, Zap, Target, Sparkles, Upload } from 'lucide-react'
+import { ChatInput } from "@/components/chat-input"
 
 type Message = {
   role: 'user' | 'assistant'
@@ -28,7 +29,6 @@ type Mode = 'accurate' | 'interactive' | 'flexible'
 
 interface ChatInterfaceProps {
   sessionId: string | null
-  initialQuestion: string | null
   chatHistory?: Message[]
 }
 
@@ -59,30 +59,88 @@ const modeToastMessages = {
   }
 }
 
-export function ChatInterface({ sessionId, initialQuestion, chatHistory = [] }: ChatInterfaceProps) {
+export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(chatHistory)
-  const [input, setInput] = useState('')
   const [mode, setMode] = useState<Mode>('interactive')
   const [uploading, setUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [initialQuestionProcessed, setInitialQuestionProcessed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  // Reset messages when session changes
+  // Update messages when chat history changes
   useEffect(() => {
     setMessages(chatHistory)
-    setInitialQuestionProcessed(false)
-  }, [sessionId, chatHistory])
+  }, [chatHistory])
 
-  useEffect(() => {
-    console.log('Effect triggered:', { sessionId, initialQuestion, initialQuestionProcessed, messagesLength: messages.length })
-    if (sessionId && initialQuestion && !initialQuestionProcessed) {
-      console.log('Processing initial question:', initialQuestion)
-      setInitialQuestionProcessed(true)
-      handleQuestion(initialQuestion)
+  // Memoize handleQuestion to prevent unnecessary re-renders
+  const handleQuestion = React.useCallback(async (question: string) => {
+    console.log('handleQuestion called with:', question)
+    if (!sessionId) return
+
+    const token = localStorage.getItem('token')
+    if (!token) {
+      toast({
+        title: "Error",
+        description: "Authentication required. Please login again.",
+        variant: "destructive"
+      })
+      return
     }
-  }, [sessionId, initialQuestion, initialQuestionProcessed])
+
+    setIsProcessing(true)
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          session_id: parseInt(sessionId, 10),
+          question,
+          mode: mode.toLowerCase()
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get response')
+      }
+
+      const data = await response.json()
+      // Fetch the updated chat history after the response
+      const historyResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/chat-history?session_id=${sessionId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      )
+      
+      if (!historyResponse.ok) {
+        throw new Error('Failed to update chat history')
+      }
+      
+      const historyData = await historyResponse.json()
+      setMessages(historyData.history)
+    } catch (error) {
+      console.error('Error getting response:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to get response. Please try again.",
+        variant: "destructive"
+      })
+      // Only add error message to local state
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "I apologize, but I encountered an error processing your request. Please try again."
+      }])
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [sessionId, mode, toast])
 
   useEffect(() => {
     const fetchCurrentMode = async () => {
@@ -106,69 +164,6 @@ export function ChatInterface({ sessionId, initialQuestion, chatHistory = [] }: 
 
     fetchCurrentMode()
   }, [])
-
-  const handleQuestion = async (question: string) => {
-    console.log('handleQuestion called with:', question)
-    if (!sessionId) return
-
-    const token = localStorage.getItem('token')
-    if (!token) {
-      toast({
-        title: "Error",
-        description: "Authentication required. Please login again.",
-        variant: "destructive"
-      })
-      return
-    }
-
-    const newMessages = [...messages, { role: 'user' as const, content: question }]
-    setMessages(newMessages)
-    setInput('')
-    setIsProcessing(true)
-
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/query`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          session_id: parseInt(sessionId, 10),
-          question,
-          mode: mode.toLowerCase()
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to get response')
-      }
-
-      const data = await response.json()
-      setMessages([...newMessages, { role: 'assistant' as const, content: data.answer }])
-    } catch (error) {
-      console.error('Error getting response:', error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to get response. Please try again.",
-        variant: "destructive"
-      })
-      // Add error message to chat
-      setMessages([...newMessages, { 
-        role: 'assistant', 
-        content: "I apologize, but I encountered an error processing your request. Please try again."
-      }])
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isProcessing) return
-    await handleQuestion(input.trim())
-  }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -301,72 +296,11 @@ export function ChatInterface({ sessionId, initialQuestion, chatHistory = [] }: 
           </div>
         )}
       </ScrollArea>
-      <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex space-x-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="w-14 px-0 flex-shrink-0">
-                      <div className="flex items-center">
-                        <ModeIcon className="h-4 w-4" />
-                        <ChevronDown className="h-3 w-3 ml-0.5" />
-                      </div>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {(Object.keys(modeDescriptions) as Mode[]).map((m) => (
-                      <DropdownMenuItem key={m} onSelect={() => handleModeChange(m)}>
-                        <div className="flex items-center">
-                          {React.createElement(modeIcons[m], { className: "h-4 w-4 mr-2" })}
-                          <span className="capitalize">{m}</span>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TooltipTrigger>
-              <TooltipContent side="top" align="start" className="max-w-xs">
-                <p className="font-semibold capitalize">{mode} Mode</p>
-                <p className="text-sm">{modeDescriptions[mode]}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1"
-          />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="flex-shrink-0"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  <Upload className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Upload a file</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-          <Button type="submit" className="flex-shrink-0">Send</Button>
-        </div>
-      </form>
+      <ChatInput 
+        sessionId={sessionId} 
+        onSubmit={handleQuestion}
+        disabled={isProcessing}
+      />
     </div>
   )
 }

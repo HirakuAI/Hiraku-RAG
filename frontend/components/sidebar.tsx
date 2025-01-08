@@ -26,12 +26,14 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth-context"
 import { useToast } from "@/components/ui/use-toast"
+import { useRouter } from 'next/navigation'
 
 const MIN_SIDEBAR_WIDTH = 240
 const MAX_SIDEBAR_WIDTH = 400
 
 interface SidebarProps {
-  onViewChange: (view: 'home' | 'chat', sessionId?: string) => void
+  initialSessionId?: string
+  onViewChange?: (view: 'home' | 'chat', sessionId?: string) => void
 }
 
 type Model = 'Llama 3.1 70B' | 'GPT-4o' | 'Claude 3.5 Sonnet' | 'Unsenser Model' | string
@@ -43,7 +45,8 @@ interface ChatSession {
   updated_at: string
 }
 
-export function Sidebar({ onViewChange }: SidebarProps) {
+export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
+  const router = useRouter()
   const [isResizing, setIsResizing] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(280)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -169,6 +172,22 @@ export function Sidebar({ onViewChange }: SidebarProps) {
     }
   }
 
+  const navigateToChat = useCallback((sessionId: string) => {
+    if (onViewChange) {
+      onViewChange('chat', sessionId)
+    } else {
+      router.push(`/chat/${sessionId}`)
+    }
+  }, [onViewChange, router])
+
+  const navigateToHome = useCallback(() => {
+    if (onViewChange) {
+      onViewChange('home')
+    } else {
+      router.push('/')
+    }
+  }, [onViewChange, router])
+
   useEffect(() => {
     window.addEventListener('mousemove', resize)
     window.addEventListener('mouseup', stopResizing)
@@ -216,7 +235,7 @@ export function Sidebar({ onViewChange }: SidebarProps) {
             <Button
               variant="ghost" 
               className="w-full justify-start text-base font-normal"
-              onClick={() => onViewChange('home')}
+              onClick={navigateToHome}
             >
               <Home className="mr-2 h-5 w-5" />
               Home
@@ -242,7 +261,7 @@ export function Sidebar({ onViewChange }: SidebarProps) {
                   <Button
                     variant="ghost" 
                     className="w-full justify-start text-sm font-normal text-muted-foreground"
-                    onClick={() => onViewChange('chat', session.id.toString())}
+                    onClick={() => navigateToChat(session.id.toString())}
                   >
                     {session.title}
                   </Button>

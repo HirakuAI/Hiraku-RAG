@@ -10,14 +10,25 @@ import { useToast } from "@/components/ui/use-toast"
 
 type View = 'home' | 'chat'
 
-export function MainLayout() {
+interface MainLayoutProps {
+  initialSessionId?: string
+  initialQuestion?: string | null
+}
+
+export function MainLayout({ initialSessionId, initialQuestion: propInitialQuestion }: MainLayoutProps) {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
   const { toast } = useToast()
-  const [currentView, setCurrentView] = useState<View>('home')
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [initialQuestion, setInitialQuestion] = useState<string | null>(null)
+  const [currentView, setCurrentView] = useState<View>(initialSessionId ? 'chat' : 'home')
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(initialSessionId || null)
+  const [initialQuestion, setInitialQuestion] = useState<string | null>(propInitialQuestion || null)
   const [chatHistory, setChatHistory] = useState<any[]>([])
+
+  useEffect(() => {
+    if (initialSessionId && propInitialQuestion) {
+      setInitialQuestion(propInitialQuestion)
+    }
+  }, [initialSessionId, propInitialQuestion])
 
   useEffect(() => {
     // Redirect to login if not authenticated
@@ -28,27 +39,10 @@ export function MainLayout() {
   }, [isAuthenticated, router])
 
   useEffect(() => {
-    const handleViewChange = async (e: Event) => {
-      const customEvent = e as CustomEvent<{ view: View; sessionId?: string }>
-      if (customEvent.detail.view === 'home') {
-        // Reset session when going back to home
-        setCurrentSessionId(null)
-        setInitialQuestion(null)
-        setChatHistory([])
-      } else if (customEvent.detail.view === 'chat' && customEvent.detail.sessionId) {
-        // Load existing chat session
-        await loadChatSession(customEvent.detail.sessionId)
-      }
-      setCurrentView(customEvent.detail.view)
+    if (initialSessionId) {
+      loadChatSession(initialSessionId)
     }
-
-    const element = document.querySelector('[data-main-layout]')
-    element?.addEventListener('viewChange', handleViewChange)
-
-    return () => {
-      element?.removeEventListener('viewChange', handleViewChange)
-    }
-  }, [])
+  }, [initialSessionId])
 
   const loadChatSession = async (sessionId: string) => {
     const token = localStorage.getItem('token')
@@ -70,7 +64,7 @@ export function MainLayout() {
 
       const data = await response.json()
       setCurrentSessionId(sessionId)
-      setChatHistory(data.history)
+      setChatHistory(data.history || [])
     } catch (error) {
       console.error('Error loading chat session:', error)
       toast({
@@ -125,15 +119,43 @@ export function MainLayout() {
   }
 
   const handleQuestionSubmit = async (question: string) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
     const sessionId = await createNewChatSession(question)
-    if (sessionId) {
-      setCurrentSessionId(sessionId)
-      setInitialQuestion(question)
-      setChatHistory([])
-      setCurrentView('chat')
-      
-      // Dispatch event to notify sidebar of new chat session
-      window.dispatchEvent(new Event('chatSessionCreated'))
+    if (!sessionId) return
+
+    try {
+      // Send the initial question first
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          session_id: parseInt(sessionId, 10),
+          question,
+          mode: 'interactive'
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to send initial question')
+      }
+
+      // Then navigate to the chat interface
+      router.push(`/chat/${sessionId}`)
+    } catch (error) {
+      console.error('Error sending initial question:', error)
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive"
+      })
     }
   }
 
@@ -150,7 +172,6 @@ export function MainLayout() {
       ) : (
         <ChatInterface 
           sessionId={currentSessionId} 
-          initialQuestion={initialQuestion}
           chatHistory={chatHistory}
         />
       )}
