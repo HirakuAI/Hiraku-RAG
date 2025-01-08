@@ -175,154 +175,68 @@ class HirakuRAG:
 
         try:
             normalized_question = question.lower().strip().rstrip("?!.,")
-
-            casual_greetings = {
-                "hi",
-                "hello",
-                "hey",
-                "how are you",
-                "how's it going",
-                "what's up",
-                "good morning",
-                "good afternoon",
-                "good evening",
-                "hi there",
-                "hello there",
-                "how are you doing",
-                "how do you do",
-                "how are things",
-                "how's everything",
-            }
-
-            is_greeting = any(
-                greeting in normalized_question for greeting in casual_greetings
-            )
-
-            if is_greeting:
-                flexible_response = None
-                if self.precision_mode == "flexible":
-                    response = self.client.chat(
-                        model=self.model_name,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": """You are Hiraku, a friendly and knowledgeable AI assistant. 
-                            When responding to greetings:
-                            1. Be natural and conversational
-                            2. Vary your responses rather than using templates
-                            3. Match the user's level of formality
-                            4. Keep responses concise but warm
-                            5. Mention that you're ready to help
-                            6. Don't use bullet points or structured formats
-                            7. Don't mention specific capabilities unless asked""",
-                            },
-                            {"role": "user", "content": question},
-                        ],
-                        stream=False,
-                        options={
-                            "temperature": 0.7,
-                            "top_p": 0.9,
-                            "top_k": 40,
-                            "num_ctx": 4096,
-                        },
-                    )
-                    flexible_response = (
-                        f"[AI Knowledge: {response.message.content.strip()}]"
-                    )
-
-                greeting_responses = {
-                    "accurate": "Hi, Im Hiraku, I can answer question base on the file you provided. But Im in Accurate mode now so I should only respond based on documents, but I don't see any greeting-related content. Would you like to ask something about the documents?",
-                    "interactive": "Hello! [AI Knowledge: I'm here to help you! While I don't see any greetings in the documents, I can still chat with you.] What would you like to know about?",
-                    "flexible": flexible_response,
-                }
-
-                return {
-                    "answer": greeting_responses[self.precision_mode],
-                    "sources": [],
-                }
+            
+            # Get relevant documents
+            relevant_docs = []
+            if self.vector_store_has_documents:
+                search_results = self.vector_store.similarity_search(
+                    normalized_question, k=k
+                )
+                if search_results:
+                    relevant_docs = search_results.get("documents", [[]])[0]
+                    relevant_metadatas = search_results.get("metadatas", [[]])[0]
 
             # For non-greeting queries, perform similarity search
-            results = self.vector_store.similarity_search(question, k)
-            context = "\n".join(results["documents"][0])
-
             # Limit chat history to only the most recent relevant context (last 3 messages)
             recent_history = []
             if history and len(history) > 0:
-                # Get the last 3 messages that are relevant to the current question
+                # Get relevant history
                 relevant_history = []
                 for msg in reversed(history[-6:]):  # Look at last 6 messages
                     if len(relevant_history) >= 3:  # Only keep last 3 relevant messages
                         break
                     # Check if message is relevant to current question using simple keyword matching
-                    msg_text = msg['content'].lower()
-                    if any(word in msg_text for word in normalized_question.split()):
+                    if any(
+                        word in msg["content"].lower()
+                        for word in normalized_question.split()
+                    ):
                         relevant_history.append(msg)
                 recent_history = list(reversed(relevant_history))
 
-            # Format conversation history
-            conversation_context = ""
-            if recent_history:
-                conversation_context = "\nRecent relevant conversation:\n" + "\n".join(
-                    f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                    for msg in recent_history
-                )
-
+            # Prepare system message based on precision mode
             system_messages = {
-                "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
-                    1. ONLY use information from the given context
-                    2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
-                    3. Do not make assumptions or add external knowledge
-                    4. Cite specific sources when referencing information
-                    5. Maintain strict accuracy over completeness
-                    6. For follow-up questions, consider ONLY the recent relevant conversation context provided""",
-                "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
-                    1. Primarily use information from the provided context
-                    2. When adding knowledge beyond the context:
-                       - Clearly mark such information with [AI Knowledge: your text]
-                    3. Always distinguish between document information and supplementary knowledge
-                    4. Consider ONLY the recent relevant conversation context for follow-up questions
-                    5. If a follow-up question refers to previous topics, maintain consistency with the recent relevant responses
-                    6. Maintain transparency about information sources""",
-                "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant with knowledge updated as of April 2024. Follow these guidelines:
-
-                    Core Interaction Guidelines:
-                    1. First check if the question can be answered using the provided context
-                    2. When adding knowledge beyond the context, clearly distinguish between:
-                       - Document information
-                       - AI knowledge (marked with [AI Knowledge: text])
-                       - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
-
-                    Response Characteristics:
-                    3. Be intellectually curious and engage in thoughtful discussion
-                    4. Think through problems step-by-step, especially for math or logic questions
-                    5. For very long tasks, offer to break them down and get user feedback on each part
-                    6. Use markdown for code blocks and offer to explain the code afterward
-
-                    Special Considerations:
-                    7. For obscure topics, end with a reminder about potential hallucination
-                    8. When citing sources, note that citations should be double-checked
-                    9. Handle controversial topics with care and clear information
-                    10. For tasks involving various viewpoints, provide assistance regardless of own views
-
-                    Communication Style:
-                    11. Be direct - avoid apologizing when declining tasks
-                    12. Maintain:
-                        - Clear distinction between document content and AI knowledge
-                        - Helpful and informative tone
-                        - Well-structured responses
-                        - Consistency with recent relevant conversation context
-                        - Intellectual engagement with user's ideas""",
+                "accurate": """You are Hiraku, a precise AI assistant. Only respond based on the provided documents. If no relevant documents are available, politely explain this and ask for questions about the documents.""",
+                "interactive": """You are Hiraku, a helpful AI assistant. Primarily use information from the provided documents, but you can provide helpful supplementary knowledge when appropriate. Clearly distinguish between document information and AI knowledge using [AI Knowledge: ...] format.""",
+                "flexible": """You are Hiraku, a friendly and conversational AI assistant. You can freely combine document information with your knowledge to provide helpful responses. Use [AI Knowledge: ...] format when adding information beyond the documents."""
             }
 
+            # Prepare the conversation messages
             messages = [
-                {"role": "system", "content": system_messages[self.precision_mode]},
                 {
-                    "role": "user",
-                    "content": f"Context: {context}\n{conversation_context}\n\nCurrent question: {question}",
-                },
+                    "role": "system",
+                    "content": system_messages[self.precision_mode],
+                }
             ]
 
-            # Generate response using Ollama with streaming
+            # Add document context if available
+            if relevant_docs:
+                context = "\n\n".join(relevant_docs)
+                messages.append({
+                    "role": "system",
+                    "content": f"Here are the relevant documents:\n\n{context}"
+                })
+
+            # Add chat history if available
+            for msg in recent_history:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+            # Add the current question
+            messages.append({"role": "user", "content": question})
+
+            # Get response from LLM
             response = self.client.chat(
                 model=self.model_name,
                 messages=messages,
@@ -335,24 +249,16 @@ class HirakuRAG:
                 },
             )
 
-            # Extract answer
-            answer = response.message.content.strip()
-
-            # Prepare sources with metadata
-            sources = [
-                {
-                    "content": doc[:200] + "..." if len(doc) > 200 else doc,
-                    "source": meta.get("source", "Unknown"),
-                    "similarity": 1 - dist,
-                }
-                for doc, meta, dist in zip(
-                    results["documents"][0],
-                    results["metadatas"][0],
-                    results["distances"][0],
-                )
-            ]
-
-            return {"answer": answer, "sources": sources}
+            return {
+                "answer": response.message.content.strip(),
+                "sources": [
+                    {
+                        "content": doc,
+                        "metadata": metadata,
+                    }
+                    for doc, metadata in zip(relevant_docs, relevant_metadatas)
+                ] if relevant_docs else []
+            }
 
         except Exception as e:
             logger.error(f"Error in query: {e}")
