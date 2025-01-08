@@ -78,6 +78,56 @@ class HirakuRAG:
 
         self.precision_mode = "interactive"  # Changed default to interactive mode
 
+        # System messages for different precision modes
+        self.system_messages = {
+            "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
+            1. ONLY use information from the given context
+            2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
+            3. Do not make assumptions or add external knowledge
+            4. Cite specific sources when referencing information
+            5. Maintain strict accuracy over completeness
+            6. For follow-up questions, consider the previous conversation context""",
+
+            "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
+            1. Primarily use information from the provided context
+            2. When adding knowledge beyond the context:
+            - Clearly mark such information with [AI Knowledge: your text]
+            3. Always distinguish between document information and supplementary knowledge
+            4. Consider the previous conversation context for follow-up questions
+            5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
+            6. Maintain transparency about information sources""",
+
+            "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant. Follow these guidelines:
+
+            Core Interaction Guidelines:
+            1. First check if the question can be answered using the provided context
+            2. When adding knowledge beyond the context, clearly distinguish between:
+            - Document information
+            - AI knowledge (marked with [AI Knowledge: text])
+            - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
+
+            Response Characteristics:
+            3. Be intellectually curious and engage in thoughtful discussion
+            4. Think through problems step-by-step, especially for math or logic questions
+            5. For very long tasks, offer to break them down and get user feedback on each part
+            6. Use markdown for code blocks and offer to explain the code afterward
+
+            Special Considerations:
+            7. For obscure topics, end with a reminder about potential hallucination
+            8. When citing sources, note that citations should be double-checked
+            9. Handle controversial topics with care and clear information
+            10. For tasks involving various viewpoints, provide assistance regardless of own views
+
+            Communication Style:
+            11. Be direct - avoid apologizing when declining tasks
+            12. Maintain:
+            - Clear distinction between document content and AI knowledge
+            - Helpful and informative tone
+            - Well-structured responses
+            - Consistency throughout the conversation
+            - Intellectual engagement with user's ideas""",
+        }
+
     def set_precision_mode(self, mode: str):
         """Set the precision mode for responses."""
         valid_modes = {"accurate", "interactive", "flexible"}
@@ -203,61 +253,13 @@ class HirakuRAG:
                         relevant_history.append(msg)
                 recent_history = list(reversed(relevant_history))
 
-            # Prepare system message based on precision mode
-            system_messages = {
-                    "accurate": """You are Hiraku, a precise AI assistant that ONLY uses provided context. Follow these rules strictly:
-                    1. ONLY use information from the given context
-                    2. If information isn't in the context, say "I cannot answer this question as the information is not in the provided documents." and suggest user change to other mode
-                    3. Do not make assumptions or add external knowledge
-                    4. Cite specific sources when referencing information
-                    5. Maintain strict accuracy over completeness
-                    6. For follow-up questions, consider the previous conversation context""",
-                    "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
-                    1. Primarily use information from the provided context
-                    2. When adding knowledge beyond the context:
-                    - Clearly mark such information with [AI Knowledge: your text]
-                    3. Always distinguish between document information and supplementary knowledge
-                    4. Consider the previous conversation context for follow-up questions
-                    5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
-                    6. Maintain transparency about information sources""",
-                    "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant. Follow these guidelines:
-
-                    Core Interaction Guidelines:
-                    1. First check if the question can be answered using the provided context
-                    2. When adding knowledge beyond the context, clearly distinguish between:
-                    - Document information
-                    - AI knowledge (marked with [AI Knowledge: text])
-                    - Time-sensitive information (noting April 2024 knowledge cutoff when relevant)
-
-                    Response Characteristics:
-                    3. Be intellectually curious and engage in thoughtful discussion
-                    4. Think through problems step-by-step, especially for math or logic questions
-                    5. For very long tasks, offer to break them down and get user feedback on each part
-                    6. Use markdown for code blocks and offer to explain the code afterward
-
-                    Special Considerations:
-                    7. For obscure topics, end with a reminder about potential hallucination
-                    8. When citing sources, note that citations should be double-checked
-                    9. Handle controversial topics with care and clear information
-                    10. For tasks involving various viewpoints, provide assistance regardless of own views
-
-                    Communication Style:
-                    11. Be direct - avoid apologizing when declining tasks
-                    12. Maintain:
-                    - Clear distinction between document content and AI knowledge
-                    - Helpful and informative tone
-                    - Well-structured responses
-                    - Consistency throughout the conversation
-                    - Intellectual engagement with user's ideas""",
-                    }
-
             # Prepare the conversation messages
             messages = [
-                    {
-                        "role": "system",
-                        "content": system_messages[self.precision_mode],
-                        }
-                    ]
+                {
+                    "role": "system",
+                    "content": self.system_messages[self.precision_mode],
+                }
+            ]
 
             # Add document context if available
             if relevant_docs:
@@ -307,6 +309,75 @@ class HirakuRAG:
                 "answer": "An error occurred while processing your query.",
                 "sources": [],
             }
+
+    def stream_query(self, question: str, history: List[Dict[str, str]] = None, k: int = 3):
+        """Stream query responses token by token."""
+        try:
+            normalized_question = question.lower().strip().rstrip("?!.,")
+            
+            # Get relevant documents
+            relevant_docs = []
+            if self.vector_store_has_documents:
+                search_results = self.vector_store.similarity_search(
+                    normalized_question, k=k
+                )
+                if search_results:
+                    relevant_docs = search_results.get("documents", [[]])[0]
+
+            # Get relevant history
+            recent_history = []
+            if history and len(history) > 0:
+                relevant_history = []
+                for msg in reversed(history[-6:]):
+                    if len(relevant_history) >= 3:
+                        break
+                    if any(word in msg["content"].lower() for word in normalized_question.split()):
+                        relevant_history.append(msg)
+                recent_history = list(reversed(relevant_history))
+
+            # Prepare messages
+            messages = [
+                {
+                    "role": "system",
+                    "content": self.system_messages[self.precision_mode],
+                }
+            ]
+
+            if relevant_docs:
+                context = "\n\n".join(relevant_docs)
+                messages.append({
+                    "role": "system",
+                    "content": f"Here are the relevant documents:\n\n{context}"
+                })
+
+            for msg in recent_history:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+            messages.append({"role": "user", "content": question})
+
+            # Stream response from LLM
+            response_stream = self.client.chat(
+                model=self.model_name,
+                messages=messages,
+                stream=True,
+                options={
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "num_ctx": 4096,
+                },
+            )
+
+            for chunk in response_stream:
+                if chunk.message and chunk.message.content:
+                    yield chunk.message.content
+
+        except Exception as e:
+            logger.error(f"Error in stream_query: {e}")
+            yield "An error occurred while processing your query."
 
     @property
     def vector_store_has_documents(self) -> bool:

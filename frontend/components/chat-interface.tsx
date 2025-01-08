@@ -17,55 +17,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { ChevronDown, Zap, Target, Sparkles, Upload } from 'lucide-react'
-import { ChatInput } from "@/components/chat-input"
+import { Upload } from 'lucide-react'
+import { useResponseMode, modeIcons, modeDescriptions, type Mode } from "@/lib/hooks/use-response-mode"
 
 type Message = {
   role: 'user' | 'assistant'
   content: string
 }
 
-type Mode = 'accurate' | 'interactive' | 'flexible'
-
 interface ChatInterfaceProps {
   sessionId: string | null
   chatHistory?: Message[]
 }
 
-const modeIcons = {
-  accurate: Target,
-  interactive: Zap,
-  flexible: Sparkles,
-}
-
-const modeDescriptions = {
-  accurate: "Only uses information from provided documents. Best for factual queries about your documents.",
-  interactive: "Primarily uses document information while allowing helpful supplementary knowledge. Good balance for most uses.",
-  flexible: "Combines document knowledge with broader understanding. Best for exploratory discussions and complex topics.",
-}
-
-const modeToastMessages = {
-  accurate: {
-    title: "Accurate Mode Activated",
-    description: "Responses will strictly use document information only. Best for factual queries."
-  },
-  interactive: {
-    title: "Interactive Mode Activated",
-    description: "Responses will balance document information with helpful context. Good for general use."
-  },
-  flexible: {
-    title: "Flexible Mode Activated",
-    description: "Responses will combine document knowledge with broader understanding. Best for exploration."
-  }
-}
-
 export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(chatHistory)
-  const [mode, setMode] = useState<Mode>('interactive')
+  const { mode, handleModeChange } = useResponseMode()
   const [uploading, setUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const [input, setInput] = useState('')
 
   // Update messages when chat history changes
   useEffect(() => {
@@ -88,9 +60,11 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
     }
 
     setIsProcessing(true)
+    // Add an empty assistant message that we'll stream into
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/query`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,8 +82,40 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
         throw new Error(errorData.error || 'Failed to get response')
       }
 
-      const data = await response.json()
-      // Fetch the updated chat history after the response
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response stream available')
+
+      let currentContent = ''
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        // Decode the chunk
+        const chunk = decoder.decode(value)
+        
+        // Process each SSE message
+        const lines = chunk.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6) // Remove 'data: ' prefix
+            currentContent += data
+            
+            // Update the last message with the new content
+            setMessages(prev => {
+              const newMessages = [...prev]
+              newMessages[newMessages.length - 1] = {
+                role: 'assistant',
+                content: currentContent
+              }
+              return newMessages
+            })
+          }
+        }
+      }
+
+      // After streaming is complete, update chat history
       const historyResponse = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/chat-history?session_id=${sessionId}`,
         {
@@ -132,38 +138,19 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
         description: error instanceof Error ? error.message : "Failed to get response. Please try again.",
         variant: "destructive"
       })
-      // Only add error message to local state
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: "I apologize, but I encountered an error processing your request. Please try again."
-      }])
+      // Update the empty assistant message with an error
+      setMessages(prev => {
+        const newMessages = [...prev]
+        newMessages[newMessages.length - 1] = {
+          role: 'assistant',
+          content: "I apologize, but I encountered an error processing your request. Please try again."
+        }
+        return newMessages
+      })
     } finally {
       setIsProcessing(false)
     }
   }, [sessionId, mode, toast])
-
-  useEffect(() => {
-    const fetchCurrentMode = async () => {
-      const token = localStorage.getItem('token')
-      if (!token) return
-
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/get-precision`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          setMode(data.mode as Mode)
-        }
-      } catch (error) {
-        console.error('Error fetching precision mode:', error)
-      }
-    }
-
-    fetchCurrentMode()
-  }, [])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -197,7 +184,6 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
         throw new Error(errorData.error || 'Failed to upload file')
       }
 
-      const data = await response.json()
       toast({
         title: "Success",
         description: `File ${file.name} uploaded successfully.`,
@@ -221,51 +207,22 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
     }
   }
 
-  const handleModeChange = async (newMode: Mode) => {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      toast({
-        title: "Authentication Error",
-        description: "Please login again to change response modes.",
-        variant: "destructive",
-        duration: 3000,
-      })
-      return
-    }
+  const ModeIcon = modeIcons[mode]
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim() || isProcessing) return
+    
+    const userMessage = input.trim()
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setInput('')
+    
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/set-precision`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ mode: newMode.toLowerCase() })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to change mode')
-      }
-
-      setMode(newMode)
-      toast({
-        title: modeToastMessages[newMode].title,
-        description: modeToastMessages[newMode].description,
-        duration: 3000,
-      })
+      await handleQuestion(userMessage)
     } catch (error) {
-      console.error('Error changing mode:', error)
-      toast({
-        title: "Mode Change Failed",
-        description: error instanceof Error ? error.message : "Could not change response mode. Please try again.",
-        variant: "destructive",
-        duration: 4000,
-      })
+      console.error('Error submitting question:', error)
     }
   }
-
-  const ModeIcon = modeIcons[mode]
 
   return (
     <div className="flex flex-col h-full">
@@ -290,17 +247,97 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
         ))}
         {isProcessing && (
           <div className="mb-4 text-left">
-            <div className="inline-block p-2 rounded-lg bg-muted">
-              <span className="animate-pulse">Thinking...</span>
+            <div className="text-sm text-muted-foreground italic">
+              <span className="inline-block animate-pulse">·</span>
+              <span className="inline-block animate-pulse delay-150">·</span>
+              <span className="inline-block animate-pulse delay-300">·</span>
             </div>
           </div>
         )}
       </ScrollArea>
-      <ChatInput 
-        sessionId={sessionId} 
-        onSubmit={handleQuestion}
-        disabled={isProcessing}
-      />
+      <form onSubmit={handleSubmit} className="p-4 border-t">
+        <div className="flex space-x-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            className="flex-1"
+            disabled={isProcessing}
+          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
+                      <ModeIcon className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {(Object.keys(modeIcons) as Mode[]).map((m) => {
+                      const Icon = modeIcons[m]
+                      return (
+                        <DropdownMenuItem
+                          key={m}
+                          onClick={() => handleModeChange(m)}
+                          className="flex items-center gap-2"
+                        >
+                          <Icon className="h-4 w-4" />
+                          <div className="flex flex-col">
+                            <span className="capitalize">{m}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {modeDescriptions[m]}
+                            </span>
+                          </div>
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="capitalize">{mode} mode</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Upload a file</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button 
+            type="submit" 
+            disabled={isProcessing || !input.trim()}
+          >
+            {isProcessing ? "Sending..." : "Send"}
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }

@@ -332,6 +332,20 @@ def stream_query(user_info):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/chat-sessions/<int:session_id>", methods=["DELETE"])
+@require_auth
+def delete_chat_session(user_info, session_id):
+    """Delete a chat session"""
+    try:
+        if user_manager.delete_chat_session(user_info["user_id"], session_id):
+            return jsonify({"message": "Chat session deleted successfully"})
+        else:
+            return jsonify({"error": "Failed to delete chat session"}), 400
+    except Exception as e:
+        logging.error(f"Error deleting chat session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     init_system()
     debug_mode = os.environ.get("FLASK_ENV") == "development"

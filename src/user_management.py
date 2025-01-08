@@ -442,3 +442,54 @@ class UserManager:
                 }
                 for row in c.fetchall()
             ]
+
+    def delete_chat_session(self, user_id: int, session_id: int) -> bool:
+        """Delete a chat session and all its messages.
+        
+        Args:
+            user_id: The ID of the user
+            session_id: The ID of the chat session to delete
+            
+        Returns:
+            bool: True if successful, False if session doesn't exist or belong to user
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
+                
+                # First verify the session belongs to the user
+                c.execute(
+                    """
+                    SELECT id FROM chat_sessions
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (session_id, user_id)
+                )
+                
+                if not c.fetchone():
+                    return False
+                
+                # Delete all messages in the session
+                c.execute(
+                    """
+                    DELETE FROM user_chats
+                    WHERE session_id = ? AND user_id = ?
+                    """,
+                    (session_id, user_id)
+                )
+                
+                # Delete the session itself
+                c.execute(
+                    """
+                    DELETE FROM chat_sessions
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (session_id, user_id)
+                )
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting chat session: {e}")
+            return False

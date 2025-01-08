@@ -146,6 +146,12 @@ export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
 
       // Remove the deleted session from state
       setChatSessions(prev => prev.filter(session => session.id !== chatToDelete))
+      
+      // If the deleted chat was currently open, navigate to home
+      if (chatToDelete.toString() === initialSessionId) {
+        navigateToHome()
+      }
+      
       toast({
         title: "Success",
         description: "Chat session deleted successfully"
@@ -259,8 +265,12 @@ export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
               {chatSessions.map((session) => (
                 <div key={session.id} className="group relative">
                   <Button
-                    variant="ghost" 
-                    className="w-full justify-start text-sm font-normal text-muted-foreground"
+                    variant={session.id.toString() === initialSessionId ? "secondary" : "ghost"}
+                    className={`w-full justify-start text-sm font-normal ${
+                      session.id.toString() === initialSessionId 
+                        ? "text-foreground" 
+                        : "text-muted-foreground"
+                    }`}
                     onClick={() => navigateToChat(session.id.toString())}
                   >
                     {session.title}

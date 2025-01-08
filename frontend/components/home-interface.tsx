@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Upload, Target, Zap, Sparkles, ArrowRight, ChevronDown } from 'lucide-react'
+import { Upload, Target, Zap, Sparkles, ArrowRight } from 'lucide-react'
 import { useToast } from "@/components/ui/use-toast"
 import {
   DropdownMenu,
@@ -17,20 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-
-type Mode = 'accurate' | 'interactive' | 'flexible'
-
-const modeIcons = {
-  accurate: Target,
-  interactive: Zap,
-  flexible: Sparkles,
-}
-
-const modeDescriptions = {
-  accurate: "Only uses information from provided documents",
-  interactive: "Balances document info with helpful knowledge",
-  flexible: "Combines documents with broader understanding",
-}
+import { useResponseMode, modeIcons, modeDescriptions, type Mode } from "@/lib/hooks/use-response-mode"
 
 interface HomeInterfaceProps {
   onQuestionSubmit: (question: string) => Promise<void>
@@ -40,53 +27,9 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
   const [input, setInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [mode, setMode] = useState<Mode>('interactive')
+  const { mode, handleModeChange } = useResponseMode()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
-
-  const handleModeChange = async (newMode: Mode) => {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      toast({
-        title: "Authentication Error",
-        description: "Please login again to change response modes.",
-        variant: "destructive",
-        duration: 3000,
-      })
-      return
-    }
-
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/set-precision`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ mode: newMode.toLowerCase() })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to change mode')
-      }
-
-      setMode(newMode)
-      toast({
-        title: `${newMode} Mode Activated`,
-        description: modeDescriptions[newMode],
-        duration: 3000,
-      })
-    } catch (error) {
-      console.error('Error changing mode:', error)
-      toast({
-        title: "Mode Change Failed",
-        description: error instanceof Error ? error.message : "Could not change response mode. Please try again.",
-        variant: "destructive",
-        duration: 4000,
-      })
-    }
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
