@@ -14,6 +14,7 @@ import os
 import logging
 from functools import wraps
 from werkzeug.utils import secure_filename
+import sqlite3
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -236,7 +237,22 @@ def login():
 
         token = user_manager.authenticate_user(username, password)
         if token:
-            return jsonify({"token": token})
+            # Get user data
+            with sqlite3.connect(user_manager.db_path) as conn:
+                c = conn.cursor()
+                c.execute(
+                    "SELECT email FROM users WHERE username = ?",
+                    (username,)
+                )
+                user_data = c.fetchone()
+                
+            return jsonify({
+                "token": token,
+                "user": {
+                    "username": username,
+                    "email": user_data[0] if user_data else None
+                }
+            })
         else:
             return jsonify({"error": "Invalid credentials"}), 401
 
