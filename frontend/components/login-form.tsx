@@ -59,10 +59,10 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
         })
         setIsRegistering(false)
       } else {
-        // Use auth context to store user data
+        // Use auth context to store user data from API response
         login(data.token, {
-          username: formData.username,
-          email: formData.email
+          username: data.user.username,
+          email: data.user.email
         })
         toast({
           title: "Login Successful",
