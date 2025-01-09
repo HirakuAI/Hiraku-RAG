@@ -6,20 +6,22 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/use-toast"
 
 export function FileUpload() {
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<FileList | null>(null)
   const { toast } = useToast()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFile(e.target.files[0])
+      setFiles(e.target.files)
     }
   }
 
   const handleUpload = async () => {
-    if (!file) return
+    if (!files || files.length === 0) return
 
     const formData = new FormData()
-    formData.append('file', file)
+    Array.from(files).forEach((file) => {
+      formData.append('files', file)
+    })
 
     try {
       const response = await fetch('/api/upload', {
@@ -30,16 +32,19 @@ export function FileUpload() {
         body: formData,
       })
 
-      if (!response.ok) throw new Error('Failed to upload file')
+      if (!response.ok) throw new Error('Failed to upload files')
 
       toast({
         title: "Success",
-        description: "File uploaded successfully.",
+        description: `${files.length} file(s) uploaded successfully.`,
       })
+      
+      // Clear the file input after successful upload
+      setFiles(null)
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to upload file.",
+        description: "Failed to upload files.",
         variant: "destructive",
       })
     }
@@ -47,9 +52,14 @@ export function FileUpload() {
 
   return (
     <div className="space-y-2">
-      <Input type="file" onChange={handleFileChange} />
-      <Button onClick={handleUpload} disabled={!file} className="w-full">
-        Upload
+      <Input 
+        type="file" 
+        onChange={handleFileChange} 
+        multiple 
+        value=""
+      />
+      <Button onClick={handleUpload} disabled={!files || files.length === 0} className="w-full">
+        Upload {files ? `(${files.length} file${files.length !== 1 ? 's' : ''})` : ''}
       </Button>
     </div>
   )

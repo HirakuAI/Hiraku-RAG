@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
+import MarkdownRenderer from 'react-markdown-renderer'
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/components/ui/use-toast"
+import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,11 +39,24 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const [input, setInput] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Update messages when chat history changes
   useEffect(() => {
     setMessages(chatHistory)
   }, [chatHistory])
+
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }
+
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [input])
 
   // Memoize handleQuestion to prevent unnecessary re-renders
   const handleQuestion = React.useCallback(async (question: string) => {
@@ -94,14 +108,14 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
 
         // Decode the chunk
         const chunk = decoder.decode(value)
-        
+
         // Process each SSE message
         const lines = chunk.split('\n')
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6) // Remove 'data: ' prefix
             currentContent += data
-            
+
             // Update the last message with the new content
             setMessages(prev => {
               const newMessages = [...prev]
@@ -153,8 +167,8 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
   }, [sessionId, mode, toast])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = e.target.files
+    if (!files || files.length === 0) return
 
     const token = localStorage.getItem('token')
     if (!token) {
@@ -168,7 +182,9 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
 
     setUploading(true)
     const formData = new FormData()
-    formData.append('file', file)
+    Array.from(files).forEach(file => {
+      formData.append('files', file)
+    })
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
@@ -181,22 +197,23 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to upload file')
+        throw new Error(errorData.error || 'Failed to upload files')
       }
 
+      const data = await response.json()
       toast({
         title: "Success",
-        description: `File ${file.name} uploaded successfully.`,
+        description: data.message,
       })
       setMessages(prev => [...prev, 
-        { role: 'user', content: `Uploaded file: ${file.name}` },
-        { role: 'assistant', content: "I've processed the uploaded file. You can now ask questions about its contents." }
+        { role: 'user', content: `Uploaded files: ${Array.from(files).map(f => f.name).join(', ')}` },
+        { role: 'assistant', content: "I've processed the uploaded files. You can now ask questions about their contents." }
       ])
     } catch (error) {
-      console.error('Error uploading file:', error)
+      console.error('Error uploading files:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to upload file.",
+        description: error instanceof Error ? error.message : "Failed to upload files.",
         variant: "destructive",
       })
     } finally {
@@ -224,103 +241,84 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
     }
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const formEvent = { preventDefault: () => {} } as React.FormEvent
+      handleSubmit(formEvent)
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 p-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`mb-4 ${
-              message.role === 'user' ? 'text-right' : 'text-left'
-            }`}
-          >
-            <div
-              className={`inline-block p-2 rounded-lg ${
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted'
-              }`}
-            >
-              {message.content}
-            </div>
-          </div>
-        ))}
-        {isProcessing && (
-          <div className="mb-4 text-left">
-            <div className="text-sm text-muted-foreground italic">
-              <span className="inline-block animate-pulse">·</span>
-              <span className="inline-block animate-pulse delay-150">·</span>
-              <span className="inline-block animate-pulse delay-300">·</span>
-            </div>
-          </div>
-        )}
-      </ScrollArea>
-      <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex space-x-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1"
-            disabled={isProcessing}
-          />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    >
-                      <ModeIcon className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {(Object.keys(modeIcons) as Mode[]).map((m) => {
-                      const Icon = modeIcons[m]
-                      return (
-                        <DropdownMenuItem
-                          key={m}
-                          onClick={() => handleModeChange(m)}
-                          className="flex items-center gap-2"
-                        >
-                          <Icon className="h-4 w-4" />
-                          <div className="flex flex-col">
-                            <span className="capitalize">{m}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {modeDescriptions[m]}
-                            </span>
-                          </div>
-                        </DropdownMenuItem>
-                      )
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="capitalize">{mode} mode</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="p-4 pb-6">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`group relative mb-4 flex ${
+                  message.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}
+              >
+                <div
+                  className={`flex max-w-[85%] md:max-w-[75%] ${
+                    message.role === 'user' ? 'items-end' : 'items-start'
+                  }`}
                 >
-                  <Upload className="h-4 w-4" />
+                  <div
+                    className={`overflow-hidden rounded-lg px-3 py-2 ${
+                      message.role === 'user'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&>p:first-child]:mt-0 [&>p:last-child]:mb-0">
+                      <MarkdownRenderer markdown={message.content} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {isProcessing && (
+              <div className="mb-4 flex justify-start">
+                <div className="text-sm text-muted-foreground italic">
+                  Thinking...
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+      <div className="flex-none w-full border-t bg-background shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
+        <form onSubmit={handleSubmit} className="flex gap-2 p-4">
+          <div className="relative flex-1">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message... (Press Shift + Enter for new line)"
+              disabled={isProcessing || !sessionId}
+              className="min-h-[44px] max-h-[200px] overflow-y-auto resize-none py-3 pr-12 transition-height duration-200"
+              rows={1}
+            />
+            <div className="absolute right-3 bottom-[10px] text-xs text-muted-foreground">
+              {input.length > 0 && <span>⏎ to send</span>}
+            </div>
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="submit"
+                  disabled={isProcessing || !sessionId || !input.trim()}
+                >
+                  Send
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Upload a file</p>
+                Send message (Enter)
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -329,15 +327,58 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileUpload}
+            multiple
           />
-          <Button 
-            type="submit" 
-            disabled={isProcessing || !input.trim()}
-          >
-            {isProcessing ? "Sending..." : "Send"}
-          </Button>
-        </div>
-      </form>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading || !sessionId}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Upload file
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <DropdownMenu>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" disabled={!sessionId}>
+                      <ModeIcon className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Change response mode
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <DropdownMenuContent align="end">
+              {Object.entries(modeIcons).map(([key, Icon]) => (
+                <DropdownMenuItem
+                  key={key}
+                  onClick={() => handleModeChange(key as Mode)}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  <span>{key}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    {modeDescriptions[key as Mode]}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </form>
+      </div>
     </div>
   )
 }

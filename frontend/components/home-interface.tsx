@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Upload, Target, Zap, Sparkles, ArrowRight } from 'lucide-react'
 import { useToast } from "@/components/ui/use-toast"
 import {
@@ -29,7 +29,28 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
   const [uploading, setUploading] = useState(false)
   const { mode, handleModeChange } = useResponseMode()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { toast } = useToast()
+
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }
+
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [input])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const formEvent = { preventDefault: () => {} } as React.FormEvent
+      handleSubmit(formEvent)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,14 +59,15 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
     setIsSubmitting(true)
     try {
       await onQuestionSubmit(input.trim())
+      setInput('')
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = e.target.files
+    if (!files || files.length === 0) return
 
     const token = localStorage.getItem('token')
     if (!token) {
@@ -59,7 +81,9 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
 
     setUploading(true)
     const formData = new FormData()
-    formData.append('file', file)
+    Array.from(files).forEach(file => {
+      formData.append('files', file)
+    })
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
@@ -72,18 +96,19 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to upload file')
+        throw new Error(errorData.error || 'Failed to upload files')
       }
 
+      const data = await response.json()
       toast({
         title: "Success",
-        description: `File ${file.name} uploaded successfully.`,
+        description: data.message,
       })
     } catch (error) {
-      console.error('Error uploading file:', error)
+      console.error('Error uploading files:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to upload file.",
+        description: error instanceof Error ? error.message : "Failed to upload files.",
         variant: "destructive",
       })
     } finally {
@@ -104,13 +129,16 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
         </h1>
         <form onSubmit={handleSubmit}>
           <div className="relative">
-            <Input
+            <Textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything..."
-              className="w-full pr-32 h-12 bg-background"
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything... (Press Shift + Enter for new line)"
+              className="w-full pr-32 min-h-[48px] max-h-[200px] overflow-y-auto resize-none py-3 bg-background transition-height duration-200"
+              rows={1}
             />
-            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            <div className="absolute right-1.5 top-[10px] flex items-center gap-1">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -176,6 +204,7 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
                 ref={fileInputRef}
                 className="hidden"
                 onChange={handleFileUpload}
+                multiple
               />
               <Button 
                 type="submit" 
