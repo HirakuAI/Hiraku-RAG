@@ -137,34 +137,38 @@ def query(user_info):
 @app.route("/api/upload", methods=["POST"])
 @require_auth
 def upload_file(user_info):
-    """Handle file upload."""
+    """Handle multiple file uploads."""
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+        if "files" not in request.files:
+            return jsonify({"error": "No files provided"}), 400
 
-        file = request.files["file"]
-        if not file.filename:
-            return jsonify({"error": "No file selected"}), 400
+        files = request.files.getlist("files")
+        if not files or not any(file.filename for file in files):
+            return jsonify({"error": "No files selected"}), 400
 
         username = user_info["username"]
         user_dir = user_manager.get_user_dir(username)
         user_uploads_dir = os.path.join(user_dir, "uploads")
         os.makedirs(user_uploads_dir, exist_ok=True)
 
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(user_uploads_dir, filename)
-        file.save(file_path)
+        uploaded_files = []
+        for file in files:
+            if file.filename:
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(user_uploads_dir, filename)
+                file.save(file_path)
+                uploaded_files.append(file_path)
+                user_manager.link_document_to_user(user_info["user_id"], filename)
 
         if username not in rag_instances:
             rag_instances[username] = HirakuRAG(username=username)
 
-        rag_instances[username].add_documents([file_path])
-
-        user_manager.link_document_to_user(user_info["user_id"], filename)
+        if uploaded_files:
+            rag_instances[username].add_documents(uploaded_files)
 
         return jsonify({
-            "message": "File uploaded and processed successfully",
-            "filename": filename
+            "message": f"{len(uploaded_files)} file(s) uploaded and processed successfully",
+            "filenames": [os.path.basename(f) for f in uploaded_files]
         })
 
     except Exception as e:
