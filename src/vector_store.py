@@ -8,7 +8,6 @@ Description:        Manages vector storage and retrieval operations
 """
 
 import os
-import torch
 import logging
 from typing import List, Dict
 
