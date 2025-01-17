@@ -35,9 +35,29 @@ class HirakuRAG:
         """Initialize RAG system components."""
         if not username:
             raise ValueError("Username is required for initialization")
+        try:
+            if torch.cuda.is_available():
+                self.device = "cuda"
+                logger.info(f"CUDA is available. Using GPU: {torch.cuda.get_device_name(0)}")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                self.device = "mps"
+                logger.info("Apple Metal acceleration is available. Using MPS device")
+            else:
+                self.device = "cpu"
+                logger.info("No GPU acceleration available (CUDA/Metal). Using CPU for computations")
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Using device: {self.device}")
+            if self.device == "cpu":
+                if torch.cuda.is_available() == False and hasattr(torch.backends, "mps"):
+                    if torch.backends.mps.is_built():
+                        logger.info("MPS is built but not available. Ensure you're on macOS 12.3+")
+                    else:
+                        logger.info("PyTorch is not built with MPS support. Consider reinstalling PyTorch")
+                logger.info("To use acceleration, ensure CUDA/Metal is properly installed and a compatible GPU is available")
+
+        except Exception as e:
+            self.device = "cpu"
+            logger.warning(f"Error checking device availability: {str(e)}. Defaulting to CPU")
+
 
         # Setup user-specific paths
         self.user_dir = os.path.join("private", "users", username)
@@ -87,7 +107,6 @@ class HirakuRAG:
             4. Cite specific sources when referencing information
             5. Maintain strict accuracy over completeness
             6. For follow-up questions, consider the previous conversation context""",
-
             "interactive": """You are Hiraku, a helpful AI assistant that prioritizes accuracy while allowing supplementary knowledge. Follow these guidelines:
             1. Primarily use information from the provided context
             2. When adding knowledge beyond the context:
@@ -96,7 +115,6 @@ class HirakuRAG:
             4. Consider the previous conversation context for follow-up questions
             5. If a follow-up question refers to previous topics, maintain consistency with earlier responses
             6. Maintain transparency about information sources""",
-
             "flexible": """You are Hiraku, an intellectually curious and knowledgeable AI assistant. Follow these guidelines:
 
             Core Interaction Guidelines:
@@ -173,9 +191,13 @@ class HirakuRAG:
                             chunk_id = f"{doc_id}_chunk_{i}"
 
                             # Check if chunk already exists
-                            existing_chunk = self.db_manager.get_chunk_metadata(chunk_id)
+                            existing_chunk = self.db_manager.get_chunk_metadata(
+                                chunk_id
+                            )
                             if existing_chunk:
-                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
+                                logger.warning(
+                                    f"Chunk {chunk_id} already exists, skipping"
+                                )
                                 continue
 
                             # Try to add chunk to database first
@@ -184,13 +206,17 @@ class HirakuRAG:
                                 # Only add to vectors if database insertion succeeded
                                 chunk_ids.append(chunk_id)
                                 chunk_texts.append(chunk)
-                                chunk_metadatas.append({
-                                    "document_id": doc_id,
-                                    "chunk_index": i,
-                                    "source": doc["metadata"]["file_path"],
-                                })
+                                chunk_metadatas.append(
+                                    {
+                                        "document_id": doc_id,
+                                        "chunk_index": i,
+                                        "source": doc["metadata"]["file_path"],
+                                    }
+                                )
                             except sqlite3.IntegrityError:
-                                logger.warning(f"Chunk {chunk_id} already exists, skipping")
+                                logger.warning(
+                                    f"Chunk {chunk_id} already exists, skipping"
+                                )
                                 continue
                             except Exception as e:
                                 logger.error(f"Error adding chunk {chunk_id}: {e}")
@@ -205,18 +231,26 @@ class HirakuRAG:
                                     metadatas=chunk_metadatas,
                                 )
                                 total_chunks += len(chunk_texts)
-                                logger.info(f"Added {len(chunk_texts)} chunks from {file_path}")
+                                logger.info(
+                                    f"Added {len(chunk_texts)} chunks from {file_path}"
+                                )
                             except Exception as e:
-                                logger.error(f"Error adding chunks to vector store: {e}")
+                                logger.error(
+                                    f"Error adding chunks to vector store: {e}"
+                                )
 
                         successful_files += 1
                     else:
-                        logger.error(f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}")
+                        logger.error(
+                            f"Failed to process {file_path}: {doc['metadata'].get('error_message', 'Unknown error')}"
+                        )
 
             except Exception as e:
                 logger.error(f"Error adding document {file_path}: {e}")
 
-        logger.info(f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks")
+        logger.info(
+            f"Successfully processed {successful_files}/{len(file_paths)} files, added {total_chunks} total chunks"
+        )
 
     def query(
         self, question: str, history: List[Dict[str, str]] = None, k: int = 3
@@ -225,7 +259,7 @@ class HirakuRAG:
 
         try:
             normalized_question = question.lower().strip().rstrip("?!.,")
-            
+
             # Get relevant documents
             relevant_docs = []
             if self.vector_store_has_documents:
@@ -264,17 +298,16 @@ class HirakuRAG:
             # Add document context if available
             if relevant_docs:
                 context = "\n\n".join(relevant_docs)
-                messages.append({
-                    "role": "system",
-                    "content": f"Here are the relevant documents:\n\n{context}"
-                })
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"Here are the relevant documents:\n\n{context}",
+                    }
+                )
 
             # Add chat history if available
             for msg in recent_history:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                messages.append({"role": msg["role"], "content": msg["content"]})
 
             # Add the current question
             messages.append({"role": "user", "content": question})
@@ -294,13 +327,17 @@ class HirakuRAG:
 
             return {
                 "answer": response.message.content.strip(),
-                "sources": [
-                    {
-                        "content": doc,
-                        "metadata": metadata,
-                    }
-                    for doc, metadata in zip(relevant_docs, relevant_metadatas)
-                ] if relevant_docs else []
+                "sources": (
+                    [
+                        {
+                            "content": doc,
+                            "metadata": metadata,
+                        }
+                        for doc, metadata in zip(relevant_docs, relevant_metadatas)
+                    ]
+                    if relevant_docs
+                    else []
+                ),
             }
 
         except Exception as e:
@@ -310,11 +347,13 @@ class HirakuRAG:
                 "sources": [],
             }
 
-    def stream_query(self, question: str, history: List[Dict[str, str]] = None, k: int = 3):
+    def stream_query(
+        self, question: str, history: List[Dict[str, str]] = None, k: int = 3
+    ):
         """Stream query responses token by token."""
         try:
             normalized_question = question.lower().strip().rstrip("?!.,")
-            
+
             # Get relevant documents
             relevant_docs = []
             if self.vector_store_has_documents:
@@ -331,7 +370,10 @@ class HirakuRAG:
                 for msg in reversed(history[-6:]):
                     if len(relevant_history) >= 3:
                         break
-                    if any(word in msg["content"].lower() for word in normalized_question.split()):
+                    if any(
+                        word in msg["content"].lower()
+                        for word in normalized_question.split()
+                    ):
                         relevant_history.append(msg)
                 recent_history = list(reversed(relevant_history))
 
@@ -345,16 +387,15 @@ class HirakuRAG:
 
             if relevant_docs:
                 context = "\n\n".join(relevant_docs)
-                messages.append({
-                    "role": "system",
-                    "content": f"Here are the relevant documents:\n\n{context}"
-                })
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"Here are the relevant documents:\n\n{context}",
+                    }
+                )
 
             for msg in recent_history:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                messages.append({"role": msg["role"], "content": msg["content"]})
 
             messages.append({"role": "user", "content": question})
 
