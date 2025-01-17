@@ -5,7 +5,7 @@ import MarkdownRenderer from 'react-markdown-renderer'
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/components/ui/use-toast"
-import { Textarea } from "@/components/ui/textarea"
+import { GlowingTextarea } from '@/components/ui/glowing-textarea'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -293,14 +293,15 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
       <div className="flex-none w-full border-t bg-background shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
         <form onSubmit={handleSubmit} className="flex gap-2 p-4">
           <div className="relative flex-1">
-            <Textarea
+            <GlowingTextarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message... (Press Shift + Enter for new line)"
               disabled={isProcessing || !sessionId}
-              className="min-h-[44px] max-h-[200px] overflow-y-auto resize-none py-3 pr-12 transition-height duration-200"
+              isProcessing={isProcessing}
+              className="min-h-[44px] max-h-[200px] overflow-y-auto py-3 pr-12 transition-height duration-200"
               rows={1}
             />
             <div className="absolute right-3 bottom-[10px] text-xs text-muted-foreground">
@@ -382,4 +383,3 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
     </div>
   )
 }
-
