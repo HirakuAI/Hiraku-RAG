@@ -137,7 +137,7 @@ export function MainLayout({ initialSessionId, initialQuestion: propInitialQuest
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          session_id: parseInt(sessionId, 10),
+          session_id: sessionId,
           question,
           mode: 'interactive'
         })
