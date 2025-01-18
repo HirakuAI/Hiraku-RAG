@@ -363,15 +363,21 @@ export function ChatInterface({ sessionId, chatHistory = [] }: ChatInterfaceProp
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent 
+              align="end" 
+              className="w-64 flex flex-col"
+            >
               {Object.entries(modeIcons).map(([key, Icon]) => (
                 <DropdownMenuItem
                   key={key}
                   onClick={() => handleModeChange(key as Mode)}
+                  className="flex flex-col items-start gap-1 p-4 cursor-pointer"
                 >
-                  <Icon className="mr-2 h-4 w-4" />
-                  <span>{key}</span>
-                  <span className="text-xs text-muted-foreground ml-2">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5" />
+                    <span className="font-semibold text-base capitalize">{key}</span>
+                  </div>
+                  <span className="text-sm text-muted-foreground pl-7 leading-relaxed">
                     {modeDescriptions[key as Mode]}
                   </span>
                 </DropdownMenuItem>
