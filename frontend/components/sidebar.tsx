@@ -211,11 +211,19 @@ export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
       >
         {/* Logo Section */}
         <div className="p-4">
-          <div className="flex items-center space-x-2">
-            <div className="bg-primary text-primary-foreground w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg">
-              H
+          <div 
+            className="flex items-center space-x-2 cursor-pointer group" 
+            onClick={navigateToHome}
+          >
+            <div className="relative">
+              <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#6a1b9a]/80 via-[#9c27b0]/80 to-[#e91e63]/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="bg-primary text-primary-foreground w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg relative transition-colors duration-300 group-hover:bg-transparent group-hover:text-white">
+                H
+              </div>
             </div>
-            <span className="font-semibold text-xl">Hiraku</span>
+            <span className="font-semibold text-xl group-hover:bg-gradient-to-r group-hover:from-[#6a1b9a] group-hover:via-[#9c27b0] group-hover:to-[#e91e63] group-hover:bg-clip-text group-hover:text-transparent transition-all duration-300">
+              Hiraku
+            </span>
           </div>
         </div>
 
