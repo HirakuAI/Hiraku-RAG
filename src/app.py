@@ -22,7 +22,7 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
         "origins": ["http://localhost:3000"],  # Next.js default port
-        "methods": ["GET", "POST", "OPTIONS"],
+        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
