@@ -39,7 +39,7 @@ interface SidebarProps {
 type Model = 'Llama 3.1 70B' | 'GPT-4o' | 'Claude 3.5 Sonnet' | 'Unsenser Model' | string
 
 interface ChatSession {
-  id: number
+  id: string
   title: string
   created_at: string
   updated_at: string
@@ -50,7 +50,7 @@ export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
   const [isResizing, setIsResizing] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(280)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [chatToDelete, setChatToDelete] = useState<number | null>(null)
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<Model>('Llama 3.1 70B')
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false)
   const [customModelName, setCustomModelName] = useState('')
@@ -121,7 +121,7 @@ export function Sidebar({ initialSessionId, onViewChange }: SidebarProps) {
     }
   }, [])
 
-  const handleDeleteClick = async (sessionId: number) => {
+  const handleDeleteClick = async (sessionId: string) => {
     setChatToDelete(sessionId)
     setIsDeleteDialogOpen(true)
   }

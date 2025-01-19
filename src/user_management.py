@@ -10,6 +10,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
+import uuid
 
 # Get the project root directory (parent of src/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -77,7 +78,7 @@ class UserManager:
             # Create chat_sessions table if not exists
             c.execute("""
                 CREATE TABLE IF NOT EXISTS chat_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT PRIMARY KEY,  -- Changed from INTEGER to TEXT for UUID
                     user_id INTEGER,
                     title TEXT NOT NULL,
                     created_at TIMESTAMP,
@@ -91,7 +92,7 @@ class UserManager:
                 CREATE TABLE IF NOT EXISTS user_chats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
-                    session_id INTEGER,
+                    session_id TEXT,  -- Changed from INTEGER to TEXT for UUID
                     message TEXT NOT NULL,
                     role TEXT NOT NULL,
                     timestamp TIMESTAMP,
@@ -405,20 +406,21 @@ class UserManager:
             )
             return c.fetchall()
 
-    def create_chat_session(self, user_id: int, title: str = "New Chat") -> int:
+    def create_chat_session(self, user_id: int, title: str = "New Chat") -> str:
         """Create a new chat session for a user."""
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             now = datetime.utcnow()
+            session_id = str(uuid.uuid4())  # Generate UUID
             c.execute(
                 """
-                INSERT INTO chat_sessions (user_id, title, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO chat_sessions (id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, title, now, now),
+                (session_id, user_id, title, now, now)
             )
             conn.commit()
-            return c.lastrowid
+            return session_id
 
     def get_chat_sessions(self, user_id: int) -> list:
         """Get all chat sessions for a user."""

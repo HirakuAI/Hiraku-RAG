@@ -6,7 +6,7 @@ Date:           December 21, 2024
 Description:    Flask API for RAG system with user authentication.
 """
 
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from flask_cors import CORS
 from rag_system import HirakuRAG
 from user_management import UserManager
@@ -15,6 +15,10 @@ import logging
 from functools import wraps
 from werkzeug.utils import secure_filename
 import sqlite3
+import uuid
+from typing import Optional
+import mimetypes
+from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -89,14 +93,14 @@ def get_user_rag(username: str) -> HirakuRAG:
     return rag_instances[username]
 
 
-def get_session_id(value) -> int:
+def get_session_id(value) -> Optional[str]:
     """Helper function to consistently handle session_id conversion"""
     if value is None:
         return None
     try:
-        return int(value)
+        return str(uuid.UUID(str(value)))
     except (ValueError, TypeError):
-        raise ValueError("Invalid session_id format")
+        raise ValueError("Invalid session_id format - must be a valid UUID")
 
 
 @app.route("/api/query", methods=["POST"])
@@ -336,17 +340,115 @@ def stream_query(user_info):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/chat-sessions/<int:session_id>", methods=["DELETE"])
+@app.route("/api/chat-sessions/<string:session_id>", methods=["DELETE"])
 @require_auth
 def delete_chat_session(user_info, session_id):
     """Delete a chat session"""
     try:
-        if user_manager.delete_chat_session(user_info["user_id"], session_id):
+        session_uuid = str(uuid.UUID(session_id))
+        if user_manager.delete_chat_session(user_info["user_id"], session_uuid):
             return jsonify({"message": "Chat session deleted successfully"})
-        else:
-            return jsonify({"error": "Failed to delete chat session"}), 400
+        return jsonify({"error": "Failed to delete chat session"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid session ID format"}), 400
     except Exception as e:
         logging.error(f"Error deleting chat session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/files", methods=["GET"])
+@require_auth
+def list_files(user_info):
+    """List all files for a user with metadata."""
+    try:
+        username = user_info["username"]
+        user_dir = user_manager.get_user_dir(username)
+        uploads_dir = os.path.join(user_dir, "uploads")
+        
+        if not os.path.exists(uploads_dir):
+            return jsonify({"files": []})
+
+        # Get all files with metadata
+        files = []
+        for filename in os.listdir(uploads_dir):
+            file_path = os.path.join(uploads_dir, filename)
+            if os.path.isfile(file_path):
+                # Get file metadata
+                stats = os.stat(file_path)
+                mime_type, _ = mimetypes.guess_type(filename)
+                
+                files.append({
+                    "id": filename,
+                    "name": filename,
+                    "type": mime_type or "application/octet-stream",
+                    "size": stats.st_size,
+                    "created_at": datetime.fromtimestamp(stats.st_ctime).isoformat(),
+                    "modified_at": datetime.fromtimestamp(stats.st_mtime).isoformat(),
+                })
+
+        return jsonify({
+            "files": sorted(files, key=lambda x: x['modified_at'], reverse=True)
+        })
+
+    except Exception as e:
+        logging.error(f"Error listing files: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/files/<path:filename>", methods=["DELETE"])
+@require_auth
+def delete_file(user_info, filename):
+    """Delete a specific file."""
+    try:
+        username = user_info["username"]
+        user_dir = user_manager.get_user_dir(username)
+        file_path = os.path.join(user_dir, "uploads", secure_filename(filename))
+        
+        if not os.path.exists(file_path) or not file_path.startswith(user_dir):
+            return jsonify({"error": "File not found"}), 404
+
+        os.remove(file_path)
+        
+        # Delete file reference from database
+        with sqlite3.connect(user_manager.db_path) as conn:
+            c = conn.cursor()
+            c.execute(
+                "DELETE FROM user_documents WHERE user_id = ? AND document_id = ?",
+                (user_info["user_id"], filename)
+            )
+            conn.commit()
+
+        # Reset RAG system for this user to update vector store
+        if username in rag_instances:
+            rag_instances[username].reset()
+
+        return jsonify({"message": f"File {filename} deleted successfully"})
+
+    except Exception as e:
+        logging.error(f"Error deleting file: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/files/<path:filename>", methods=["GET"])
+@require_auth
+def download_file(user_info, filename):
+    """Download a specific file."""
+    try:
+        username = user_info["username"]
+        user_dir = user_manager.get_user_dir(username)
+        file_path = os.path.join(user_dir, "uploads", secure_filename(filename))
+        
+        if not os.path.exists(file_path) or not file_path.startswith(user_dir):
+            return jsonify({"error": "File not found"}), 404
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        logging.error(f"Error downloading file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 

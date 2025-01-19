@@ -122,8 +122,8 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
   const ModeIcon = modeIcons[mode]
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 p-4">
-      <div className="w-full max-w-2xl mx-auto">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] p-4">
+      <div className="w-full max-w-2xl mx-auto -mt-32">
         <h1 className="text-4xl font-semibold text-center mb-6">
           What do you want to know?
         </h1>
@@ -221,4 +221,3 @@ export function HomeInterface({ onQuestionSubmit }: HomeInterfaceProps) {
     </div>
   )
 }
-
