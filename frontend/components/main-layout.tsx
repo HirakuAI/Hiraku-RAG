@@ -7,6 +7,7 @@ import { ChatInterface } from "./chat-interface"
 import { Header } from "./header"
 import { useAuth } from "@/lib/auth-context"
 import { useToast } from "@/components/ui/use-toast"
+import FileManagementPanel from "@/components/file-management-panel"
 
 type View = 'home' | 'chat'
 
@@ -167,15 +168,21 @@ export function MainLayout({ initialSessionId, initialQuestion: propInitialQuest
   return (
     <main className="flex-1 flex flex-col overflow-hidden" data-main-layout>
       <Header title={currentView === 'home' ? 'Home' : 'Chat'} />
-      {currentView === 'home' ? (
-        <HomeInterface onQuestionSubmit={handleQuestionSubmit} />
-      ) : (
-        <ChatInterface 
-          sessionId={currentSessionId} 
-          chatHistory={chatHistory}
-        />
-      )}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1">
+          {currentView === 'home' ? (
+            <HomeInterface onQuestionSubmit={handleQuestionSubmit} />
+          ) : (
+            <ChatInterface 
+              sessionId={currentSessionId} 
+              chatHistory={chatHistory}
+            />
+          )}
+        </div>
+        <div className="w-80 border-l p-4">
+          <FileManagementPanel />
+        </div>
+      </div>
     </main>
   )
 }
-
