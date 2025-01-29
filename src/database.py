@@ -20,13 +20,17 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Handles SQLite database operations for document and chunk metadata."""
 
-    def __init__(self, db_path: str = "private/rag.db"):
+    def __init__(self, db_path: str = None):
         """
         Initialize database manager and create necessary tables.
 
         Args:
             db_path: Path to SQLite database file
         """
+        if db_path is None:
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            db_path = os.path.join(project_root, "private", "rag.db")
+            
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.db_path = db_path
         self.init_database()
