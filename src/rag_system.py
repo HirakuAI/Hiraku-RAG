@@ -58,9 +58,11 @@ class HirakuRAG:
             self.device = "cpu"
             logger.warning(f"Error checking device availability: {str(e)}. Defaulting to CPU")
 
-
+        # Get project root directory
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # Setup user-specific paths
-        self.user_dir = os.path.join("private", "users", username)
+        self.user_dir = os.path.join(self.project_root, "private", "users", username)
         self.db_path = os.path.join(self.user_dir, "chats", "rag.db")
         self.vector_dir = os.path.join(self.user_dir, "vectordb")
         self.uploads_dir = os.path.join(self.user_dir, "uploads")
