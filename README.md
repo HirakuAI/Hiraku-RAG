@@ -12,119 +12,6 @@
 
 Hiraku is an advanced RAG (Retrieval-Augmented Generation) system that combines document processing, vector storage, and LLM capabilities to provide intelligent document analysis and question answering.
 
-
-## Project TODO List
-
-### Core Features (Priority)
-- [ ] Implement Multi-Model Support **(WIP)**
-  - ~~Add Ollama integration (default local server)~~
-  - Add OpenAI API integration
-  - Add Claude API integration
-  - Create model configuration UI
-  - Allow users to use custom API keys/servers
-  - Implement model fallback logic
-  - Add model switching interface
-  - If the user's question is not in the files, inform the user and provide an answer based on the model's training data or online resources.
-
-- [ ] Add Internet Search Integration
-  - Add real-time web search capability
-  - Merge web results with file-based answers
-  - Add search provider configuration
-  - Implement search result caching
-  - Add source citations for web results
-
-- [ ] Implement Multi-User System
-  - Add user authentication
-  - Create isolated user workspaces
-  - Setup secure API key storage
-  - Add user preferences
-  - Implement workspace sharing
-
-- [ ] Enhance Document Processing
-  - Using LamaParse/LamaIndex for document processing
-  - Add support for tables
-  - Add support for images
-  - Implement better PDF parsing
-  - Add batch processing
-  - Improve metadata extraction
-  - Add document versioning
-
-### User Interface
-- [ ] Add File Management Features
-  - File upload progress
-  - File list/grid view
-  - Delete/update documents
-  - Folder organization
-  - Tag/label system
-  - Search functionality
-
-- [ ] Improve Chat Interface
-  - Add loading states
-  - Better error messages
-  - Source citations display
-  - Conversation history
-  - Context management
-  - Message threading
-
-- [ ] Add Settings Interface
-  - Model provider selection
-  - API key management
-  - User preferences
-  - Theme customization
-  - Language settings
-  - Export/import settings
-
-### Security & Privacy
-- [ ] Implement Security Features
-  - User authentication system
-  - API key encryption
-  - Rate limiting
-  - Input validation
-  - File scanning
-  - Access logging
-
-- [ ] Add Privacy Controls
-  - Data retention settings
-  - Workspace isolation
-  - Usage analytics opt-out
-  - Data export
-  - Account deletion
-
-### Testing & Documentation
-- [ ] Add Comprehensive Testing
-  - Unit tests for core functions
-  - Integration tests for API
-  - Frontend component tests
-  - Security testing
-  - Performance testing
-  - Load testing
-
-- [ ] Complete Documentation
-  - Setup guide
-  - API documentation
-  - User manual
-  - Developer guide
-  - Security guidelines
-  - Contribution guidelines
-
-### Performance Optimization
-- [ ] Optimize System Performance
-  - Implement caching
-  - Add request queuing
-  - Optimize database queries
-  - Improve search speed
-  - Reduce memory usage
-  - Add performance monitoring
-
-### Deployment
-- [ ] Setup Deployment Pipeline
-  - Docker containerization
-  - CI/CD setup
-  - Environment configuration
-  - Backup systems
-  - Monitoring setup
-  - Error tracking
-
 ## Features
 
 ### Core Capabilities
@@ -166,7 +53,7 @@ ollama pull nomic-embed-text # embedding model
 
 3. Clone the repository:
 ```bash
-git clone https://github.com/yuann3/Hiraku-RAG.git
+git clone https://github.com/HirakuAI/Hiraku-RAG.git
 cd Hiraku-RAG
 ```
 
